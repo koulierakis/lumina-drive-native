@@ -20,7 +20,12 @@
           "locationWhenInUsePermission": "Το LUMINA Drive χρειάζεται την τοποθεσία σας για χάρτη, κοντινά σημεία και πλοήγηση."
         }
       ],
-      "@rnmapbox/maps"
+      [
+        "@rnmapbox/maps",
+        {
+          "RNMapboxMapsVersion": "11.20.1"
+        }
+      ]
     ],
     "android": {
       "package": "com.lumina.drive",
