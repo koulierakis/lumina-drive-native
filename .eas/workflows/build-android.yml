@@ -6,8 +6,8 @@ on:
 
 jobs:
   build_android:
-    name: Build Android App
+    name: Build Android Preview APK
     type: build
     params:
       platform: android
-      profile: production
+      profile: preview
