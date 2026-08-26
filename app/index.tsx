@@ -25,6 +25,12 @@ type Poi = {
   point: Point;
   distance: number;
 };
+type RouteStep = {
+  instruction: string;
+  point: Point;
+  distance: number;
+  duration: number;
+};
 type RouteInfo = {
   geometry: {
     type: 'Feature';
@@ -34,6 +40,7 @@ type RouteInfo = {
   distance: number;
   duration: number;
   instruction: string;
+  steps: RouteStep[];
 };
 
 const TOKEN_KEY = 'lumina-mapbox-public-token';
@@ -115,6 +122,8 @@ export default function HomeScreen() {
   const [items, setItems] = useState<Poi[]>([]);
   const [selected, setSelected] = useState<Poi | null>(null);
   const [route, setRoute] = useState<RouteInfo | null>(null);
+  const [navigationActive, setNavigationActive] = useState(false);
+  const [stepIndex, setStepIndex] = useState(0);
   const [query, setQuery] = useState('');
   const [lastCategory, setLastCategory] = useState('');
   const camera = useRef<Mapbox.Camera>(null);
@@ -156,10 +165,44 @@ export default function HomeScreen() {
     return () => sub?.remove();
   }, []);
 
+  useEffect(() => {
+    if (!navigationActive || !position || !route) return;
+
+    camera.current?.setCamera({
+      centerCoordinate: [position.lng, position.lat],
+      zoomLevel: 16.2,
+      pitch: 48,
+      animationDuration: 650,
+    });
+
+    const currentStep = route.steps[stepIndex];
+    if (currentStep) {
+      const metersToManeuver = distanceMeters(position, currentStep.point);
+      if (metersToManeuver < 35 && stepIndex < route.steps.length - 1) {
+        setStepIndex((value) => Math.min(value + 1, route.steps.length - 1));
+      }
+    }
+
+    if (selected && distanceMeters(position, selected.point) < 30) {
+      setStatus(`Έφτασες στο ${selected.name}`);
+    }
+  }, [navigationActive, position, route, selected, stepIndex]);
+
   const center = useMemo<[number, number] | undefined>(
     () => (position ? [position.lng, position.lat] : undefined),
     [position],
   );
+
+  const activeInstruction = useMemo(() => {
+    if (!route) return '';
+    return route.steps[stepIndex]?.instruction || route.instruction;
+  }, [route, stepIndex]);
+
+  const distanceToNextManeuver = useMemo(() => {
+    if (!route || !position) return null;
+    const step = route.steps[stepIndex];
+    return step ? distanceMeters(position, step.point) : null;
+  }, [route, position, stepIndex]);
 
   async function saveToken() {
     const value = tokenDraft.trim();
@@ -190,6 +233,8 @@ export default function HomeScreen() {
     setItems([]);
     setSelected(null);
     setRoute(null);
+    setNavigationActive(false);
+    setStepIndex(0);
     setStatus(`Mapbox: αναζήτηση “${q}”…`);
     try {
       const url = new URL(SEARCH_API);
@@ -235,11 +280,13 @@ export default function HomeScreen() {
     }
   }
 
-  async function startNavigation(poi: Poi) {
+  async function calculateRoute(poi: Poi) {
     if (!position || !token) return;
     setSelected(poi);
     setRouteLoading(true);
     setRoute(null);
+    setNavigationActive(false);
+    setStepIndex(0);
     setStatus(`Υπολογίζω διαδρομή προς ${poi.name}…`);
     try {
       const coordinates = `${position.lng},${position.lat};${poi.point.lng},${poi.point.lat}`;
@@ -260,10 +307,20 @@ export default function HomeScreen() {
       const first = data?.routes?.[0];
       const coords = first?.geometry?.coordinates;
       if (!first || !Array.isArray(coords) || coords.length < 2) throw new Error('Δεν βρέθηκε οδική διαδρομή.');
-      const steps = first?.legs?.[0]?.steps || [];
-      const instruction =
-        steps.find((step: any) => step?.maneuver?.instruction)?.maneuver?.instruction ||
-        `Πορεία προς ${poi.name}`;
+      const rawSteps = first?.legs?.[0]?.steps || [];
+      const steps: RouteStep[] = rawSteps
+        .map((step: any) => {
+          const location = step?.maneuver?.location;
+          if (!Array.isArray(location) || location.length < 2) return null;
+          return {
+            instruction: String(step?.maneuver?.instruction || 'Συνέχισε στη διαδρομή'),
+            point: { lng: Number(location[0]), lat: Number(location[1]) },
+            distance: Number(step?.distance || 0),
+            duration: Number(step?.duration || 0),
+          } satisfies RouteStep;
+        })
+        .filter(Boolean);
+      const instruction = steps[0]?.instruction || `Πορεία προς ${poi.name}`;
       const info: RouteInfo = {
         geometry: {
           type: 'Feature',
@@ -272,7 +329,8 @@ export default function HomeScreen() {
         },
         distance: Number(first.distance || 0),
         duration: Number(first.duration || 0),
-        instruction: String(instruction),
+        instruction,
+        steps,
       };
       setRoute(info);
       setStatus(`Διαδρομή έτοιμη προς ${poi.name}`);
@@ -286,12 +344,27 @@ export default function HomeScreen() {
     }
   }
 
+  function beginGuidance() {
+    if (!route || !position || !selected) return;
+    setNavigationActive(true);
+    setStepIndex(0);
+    setStatus(`Καθοδήγηση ενεργή προς ${selected.name}`);
+    camera.current?.setCamera({
+      centerCoordinate: [position.lng, position.lat],
+      zoomLevel: 16.2,
+      pitch: 48,
+      animationDuration: 700,
+    });
+  }
+
   function stopNavigation() {
+    setNavigationActive(false);
     setRoute(null);
     setSelected(null);
+    setStepIndex(0);
     setStatus('GPS ενεργό');
     if (center) {
-      camera.current?.setCamera({ centerCoordinate: center, zoomLevel: 15, animationDuration: 500 });
+      camera.current?.setCamera({ centerCoordinate: center, zoomLevel: 15, pitch: 0, animationDuration: 500 });
     }
   }
 
@@ -309,11 +382,21 @@ export default function HomeScreen() {
         </View>
 
         {route ? (
-          <View style={styles.turnBanner}>
+          <View style={[styles.turnBanner, navigationActive && styles.turnBannerActive]}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.turnEyebrow}>ΠΛΟΗΓΗΣΗ · {selected?.name}</Text>
-              <Text style={styles.turnInstruction}>{route.instruction}</Text>
-              <Text style={styles.turnMeta}>{fmtDistance(route.distance)} · {fmtDuration(route.duration)}</Text>
+              <Text style={styles.turnEyebrow}>{navigationActive ? 'ΚΑΘΟΔΗΓΗΣΗ ΕΝΕΡΓΗ' : 'ΔΙΑΔΡΟΜΗ ΕΤΟΙΜΗ'} · {selected?.name}</Text>
+              <Text style={styles.turnInstruction}>{activeInstruction}</Text>
+              <Text style={styles.turnMeta}>
+                {navigationActive && distanceToNextManeuver != null
+                  ? `${fmtDistance(distanceToNextManeuver)} μέχρι την επόμενη οδηγία · `
+                  : ''}
+                {fmtDistance(route.distance)} · {fmtDuration(route.duration)}
+              </Text>
+              {!navigationActive ? (
+                <Pressable style={styles.beginButton} onPress={beginGuidance}>
+                  <Text style={styles.beginButtonText}>▶ ΕΝΑΡΞΗ ΚΑΘΟΔΗΓΗΣΗΣ</Text>
+                </Pressable>
+              ) : null}
             </View>
             <Pressable style={styles.stopButton} onPress={stopNavigation}>
               <Text style={styles.stopButtonText}>✕</Text>
@@ -321,81 +404,85 @@ export default function HomeScreen() {
           </View>
         ) : null}
 
-        <View style={styles.gpsBar}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.gpsValue}>{position ? 'GPS ενεργό' : 'GPS αναμονή'}</Text>
-            <Text style={styles.gpsMeta} numberOfLines={1}>
-              {position
-                ? `${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}${accuracy ? ` · ±${Math.round(accuracy)}m` : ''}`
-                : gpsError || 'Αναμονή πραγματικής θέσης'}
-            </Text>
-          </View>
-          <Pressable
-            style={styles.centerButton}
-            onPress={() =>
-              center && camera.current?.setCamera({ centerCoordinate: center, zoomLevel: 15, animationDuration: 500 })
-            }
-          >
-            <Text style={styles.centerButtonText}>◎</Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.searchRow}>
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Όνομα ή διεύθυνση…"
-            placeholderTextColor="#7d8796"
-            style={styles.searchInput}
-            returnKeyType="search"
-            onSubmitEditing={() => searchMapbox(query)}
-          />
-          <Pressable style={styles.searchButton} onPress={() => searchMapbox(query)}>
-            <Text style={styles.searchButtonText}>Αναζήτηση</Text>
-          </Pressable>
-        </View>
-
-        <FlatList
-          horizontal
-          data={categories}
-          keyExtractor={(x) => x[0]}
-          showsHorizontalScrollIndicator={false}
-          style={styles.categoriesList}
-          contentContainerStyle={styles.categories}
-          renderItem={({ item }) => (
-            <Pressable
-              style={[styles.category, lastCategory === item[0] && styles.categoryActive]}
-              onPress={() => {
-                setLastCategory(item[0]);
-                searchMapbox(item[0]);
-              }}
-            >
-              <Text style={styles.categoryText} numberOfLines={1}>{item[1]}</Text>
-            </Pressable>
-          )}
-        />
-
-        <View style={styles.statusBox}>
-          {loading || routeLoading ? <ActivityIndicator /> : null}
-          <Text style={styles.statusText}>{status}</Text>
-        </View>
-
-        {items.length > 0 ? (
-          <View style={styles.resultsBlock}>
-            <Text style={styles.resultsTitle}>Κοντινά σημεία</Text>
-            {items.map((item, index) => (
-              <Pressable key={item.id} style={styles.resultCard} onPress={() => startNavigation(item)}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.resultTitle} numberOfLines={1}>{index + 1}. {item.name}</Text>
-                  <Text style={styles.resultMeta} numberOfLines={2}>{fmtDistance(item.distance)} · {item.address}</Text>
-                </View>
-                <Text style={styles.startText}>▶</Text>
+        {!navigationActive ? (
+          <>
+            <View style={styles.gpsBar}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.gpsValue}>{position ? 'GPS ενεργό' : 'GPS αναμονή'}</Text>
+                <Text style={styles.gpsMeta} numberOfLines={1}>
+                  {position
+                    ? `${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}${accuracy ? ` · ±${Math.round(accuracy)}m` : ''}`
+                    : gpsError || 'Αναμονή πραγματικής θέσης'}
+                </Text>
+              </View>
+              <Pressable
+                style={styles.centerButton}
+                onPress={() =>
+                  center && camera.current?.setCamera({ centerCoordinate: center, zoomLevel: 15, animationDuration: 500 })
+                }
+              >
+                <Text style={styles.centerButtonText}>◎</Text>
               </Pressable>
-            ))}
-          </View>
+            </View>
+
+            <View style={styles.searchRow}>
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Όνομα ή διεύθυνση…"
+                placeholderTextColor="#7d8796"
+                style={styles.searchInput}
+                returnKeyType="search"
+                onSubmitEditing={() => searchMapbox(query)}
+              />
+              <Pressable style={styles.searchButton} onPress={() => searchMapbox(query)}>
+                <Text style={styles.searchButtonText}>Αναζήτηση</Text>
+              </Pressable>
+            </View>
+
+            <FlatList
+              horizontal
+              data={categories}
+              keyExtractor={(x) => x[0]}
+              showsHorizontalScrollIndicator={false}
+              style={styles.categoriesList}
+              contentContainerStyle={styles.categories}
+              renderItem={({ item }) => (
+                <Pressable
+                  style={[styles.category, lastCategory === item[0] && styles.categoryActive]}
+                  onPress={() => {
+                    setLastCategory(item[0]);
+                    searchMapbox(item[0]);
+                  }}
+                >
+                  <Text style={styles.categoryText} numberOfLines={1}>{item[1]}</Text>
+                </Pressable>
+              )}
+            />
+
+            <View style={styles.statusBox}>
+              {loading || routeLoading ? <ActivityIndicator /> : null}
+              <Text style={styles.statusText}>{status}</Text>
+            </View>
+
+            {items.length > 0 ? (
+              <View style={styles.resultsBlock}>
+                <Text style={styles.resultsTitle}>Κοντινά σημεία</Text>
+                {items.map((item, index) => (
+                  <Pressable key={item.id} style={styles.resultCard} onPress={() => calculateRoute(item)}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.resultTitle} numberOfLines={1}>{index + 1}. {item.name}</Text>
+                      <Text style={styles.resultMeta} numberOfLines={2}>{fmtDistance(item.distance)} · {item.address}</Text>
+                    </View>
+                    <Text style={styles.startText}>▶</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+          </>
         ) : null}
 
-        <View style={styles.mapWrap}>
+        <View style={[styles.mapWrap, navigationActive && styles.mapWrapNavigation]}>
           {token ? (
             <Mapbox.MapView style={styles.map} styleURL={Mapbox.StyleURL.Street}>
               <Mapbox.Camera ref={camera} zoomLevel={13} centerCoordinate={center} />
@@ -404,7 +491,7 @@ export default function HomeScreen() {
                 <Mapbox.ShapeSource id="navigation-route" shape={route.geometry}>
                   <Mapbox.LineLayer
                     id="navigation-route-line"
-                    style={{ lineColor: '#2d96ff', lineWidth: 7, lineCap: 'round', lineJoin: 'round' }}
+                    style={{ lineColor: '#2d96ff', lineWidth: navigationActive ? 9 : 7, lineCap: 'round', lineJoin: 'round' }}
                   />
                 </Mapbox.ShapeSource>
               ) : null}
@@ -459,9 +546,12 @@ const styles = StyleSheet.create({
   headerButton: { width: 46, height: 46, borderRadius: 15, backgroundColor: '#141b24', alignItems: 'center', justifyContent: 'center' },
   headerButtonText: { color: '#fff', fontSize: 25, fontWeight: '700' },
   turnBanner: { marginHorizontal: 16, marginBottom: 10, padding: 14, backgroundColor: '#0f3153', borderRadius: 18, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#2d96ff' },
+  turnBannerActive: { backgroundColor: '#0b2239', borderColor: '#5ce1d2' },
   turnEyebrow: { color: '#69b5ff', fontSize: 11, fontWeight: '900', letterSpacing: 1.5 },
   turnInstruction: { color: '#fff', fontSize: 20, fontWeight: '900', marginTop: 4 },
   turnMeta: { color: '#b9cde1', fontSize: 15, marginTop: 5, fontWeight: '700' },
+  beginButton: { marginTop: 12, minHeight: 48, borderRadius: 15, backgroundColor: '#2d96ff', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
+  beginButtonText: { color: '#fff', fontSize: 15, fontWeight: '900', letterSpacing: 0.5 },
   stopButton: { width: 42, height: 42, borderRadius: 14, backgroundColor: '#1c2b3a', alignItems: 'center', justifyContent: 'center', marginLeft: 10 },
   stopButtonText: { color: '#fff', fontSize: 19, fontWeight: '900' },
   gpsBar: { marginHorizontal: 16, marginBottom: 12, padding: 15, borderRadius: 22, backgroundColor: '#141b24', flexDirection: 'row', alignItems: 'center' },
@@ -487,6 +577,7 @@ const styles = StyleSheet.create({
   resultMeta: { color: '#97a2b1', fontSize: 14, marginTop: 5, lineHeight: 19 },
   startText: { color: '#4aa8ff', fontSize: 28, fontWeight: '900', marginLeft: 10 },
   mapWrap: { height: 420, marginHorizontal: 16, borderRadius: 24, overflow: 'hidden', backgroundColor: '#111820' },
+  mapWrapNavigation: { height: 610, borderRadius: 20 },
   map: { flex: 1 },
   mapPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   mapPlaceholderTitle: { color: '#fff', fontSize: 20, fontWeight: '900', textAlign: 'center' },
