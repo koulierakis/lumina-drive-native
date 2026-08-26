@@ -9,6 +9,7 @@ import {
   Modal,
   Pressable,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -28,13 +29,13 @@ type Poi = {
 const TOKEN_KEY = 'lumina-mapbox-public-token';
 const SEARCH_API = 'https://api.mapbox.com/search/searchbox/v1/forward';
 const categories = [
-  ['restaurant', '🍽️ Εστιατόρια / Ταβέρνες'],
+  ['restaurant', '🍽️ Εστιατόρια'],
   ['cafe', '☕ Καφέ'],
   ['fast food', '🌯 Fast food'],
   ['hotel', '🏨 Ξενοδοχεία'],
-  ['apartments', '🏠 Apartments / Studios'],
+  ['apartments', '🏠 Διαμονή'],
   ['pharmacy', '💊 Φαρμακεία'],
-  ['gas station', '⛽ Βενζινάδικα'],
+  ['gas station', '⛽ Βενζίνη'],
   ['parking', '🅿️ Parking'],
   ['supermarket', '🛒 Supermarket'],
   ['bank', '🏦 Τράπεζες'],
@@ -98,18 +99,12 @@ export default function HomeScreen() {
         setStatus('GPS unavailable');
         return;
       }
-      const current = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
+      const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       setPosition({ lat: current.coords.latitude, lng: current.coords.longitude });
       setAccuracy(current.coords.accuracy ?? null);
       setStatus('GPS ενεργό');
       sub = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.High,
-          distanceInterval: 5,
-          timeInterval: 3000,
-        },
+        { accuracy: Location.Accuracy.High, distanceInterval: 5, timeInterval: 3000 },
         (loc) => {
           setPosition({ lat: loc.coords.latitude, lng: loc.coords.longitude });
           setAccuracy(loc.coords.accuracy ?? null);
@@ -167,17 +162,13 @@ export default function HomeScreen() {
       url.searchParams.set('limit', '10');
       url.searchParams.set('proximity', `${position.lng},${position.lat}`);
       url.searchParams.set('types', 'poi');
-      const response = await fetch(url.toString(), {
-        headers: { Accept: 'application/json' },
-      });
+      const response = await fetch(url.toString(), { headers: { Accept: 'application/json' } });
       const raw = await response.text();
       let data: any = {};
       try {
         data = raw ? JSON.parse(raw) : {};
       } catch {}
-      if (!response.ok) {
-        throw new Error(`Mapbox HTTP ${response.status}: ${data?.message || raw || 'error'}`);
-      }
+      if (!response.ok) throw new Error(`Mapbox HTTP ${response.status}: ${data?.message || raw || 'error'}`);
       const parsed: Poi[] = (data.features || [])
         .map((f: any, index: number) => {
           const coords = f?.geometry?.coordinates;
@@ -200,8 +191,8 @@ export default function HomeScreen() {
       setItems(parsed);
       setStatus(
         parsed.length
-          ? `Mapbox · ${parsed.length} πραγματικά αποτελέσματα · κοντινότερο πρώτο`
-          : 'Το Mapbox απάντησε αλλά δεν βρήκε κοντινά σημεία.',
+          ? `${parsed.length} αποτελέσματα · κοντινότερο πρώτο`
+          : 'Δεν βρέθηκαν κοντινά σημεία.',
       );
     } catch (e: any) {
       setStatus(String(e?.message || e));
@@ -221,114 +212,108 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.eyebrow}>LUMINA</Text>
-          <Text style={styles.title}>Drive Assistant</Text>
+      <ScrollView contentContainerStyle={styles.screen} keyboardShouldPersistTaps="handled">
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.eyebrow}>LUMINA</Text>
+            <Text style={styles.title}>Drive Assistant</Text>
+          </View>
+          <Pressable style={styles.headerButton} onPress={() => setSettingsOpen(true)}>
+            <Text style={styles.headerButtonText}>☰</Text>
+          </Pressable>
         </View>
-        <Pressable style={styles.headerButton} onPress={() => setSettingsOpen(true)}>
-          <Text style={styles.headerButtonText}>☰</Text>
-        </Pressable>
-      </View>
 
-      <View style={styles.gpsBar}>
-        <View>
-          <Text style={styles.gpsValue}>{position ? 'GPS ενεργό' : 'GPS αναμονή'}</Text>
-          <Text style={styles.gpsMeta}>
-            {position
-              ? `${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}${accuracy ? ` · ±${Math.round(accuracy)}m` : ''}`
-              : gpsError || 'Αναμονή πραγματικής θέσης'}
-          </Text>
-        </View>
-        <Pressable
-          style={styles.centerButton}
-          onPress={() =>
-            center &&
-            camera.current?.setCamera({
-              centerCoordinate: center,
-              zoomLevel: 15,
-              animationDuration: 500,
-            })
-          }
-        >
-          <Text style={styles.centerButtonText}>◎</Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.searchRow}>
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Αναζήτηση με όνομα ή διεύθυνση…"
-          placeholderTextColor="#7d8796"
-          style={styles.searchInput}
-          returnKeyType="search"
-          onSubmitEditing={() => searchMapbox(query)}
-        />
-        <Pressable style={styles.searchButton} onPress={() => searchMapbox(query)}>
-          <Text style={styles.searchButtonText}>Αναζήτηση</Text>
-        </Pressable>
-      </View>
-
-      <FlatList
-        horizontal
-        data={categories}
-        keyExtractor={(x) => x[0]}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.categories}
-        renderItem={({ item }) => (
+        <View style={styles.gpsBar}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.gpsValue}>{position ? 'GPS ενεργό' : 'GPS αναμονή'}</Text>
+            <Text style={styles.gpsMeta} numberOfLines={1}>
+              {position
+                ? `${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}${accuracy ? ` · ±${Math.round(accuracy)}m` : ''}`
+                : gpsError || 'Αναμονή πραγματικής θέσης'}
+            </Text>
+          </View>
           <Pressable
-            style={[styles.category, lastCategory === item[0] && styles.categoryActive]}
-            onPress={() => {
-              setLastCategory(item[0]);
-              searchMapbox(item[0]);
-            }}
+            style={styles.centerButton}
+            onPress={() =>
+              center && camera.current?.setCamera({ centerCoordinate: center, zoomLevel: 15, animationDuration: 500 })
+            }
           >
-            <Text style={styles.categoryText}>{item[1]}</Text>
+            <Text style={styles.centerButtonText}>◎</Text>
           </Pressable>
-        )}
-      />
+        </View>
 
-      <View style={styles.mapWrap}>
-        {token ? (
-          <Mapbox.MapView style={styles.map} styleURL={Mapbox.StyleURL.Street}>
-            <Mapbox.Camera ref={camera} zoomLevel={13} centerCoordinate={center} />
-            {position ? <Mapbox.LocationPuck puckBearingEnabled pulsing={{ isEnabled: true }} /> : null}
-            {selected ? (
-              <Mapbox.PointAnnotation
-                id="selected-destination"
-                coordinate={[selected.point.lng, selected.point.lat]}
-              />
-            ) : null}
-          </Mapbox.MapView>
-        ) : (
-          <Pressable style={styles.mapPlaceholder} onPress={() => setSettingsOpen(true)}>
-            <Text style={styles.mapPlaceholderTitle}>Mapbox token δεν έχει οριστεί</Text>
-            <Text style={styles.mapPlaceholderText}>Πάτησε εδώ για να προσθέσεις public token (pk…).</Text>
+        <View style={styles.searchRow}>
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Όνομα ή διεύθυνση…"
+            placeholderTextColor="#7d8796"
+            style={styles.searchInput}
+            returnKeyType="search"
+            onSubmitEditing={() => searchMapbox(query)}
+          />
+          <Pressable style={styles.searchButton} onPress={() => searchMapbox(query)}>
+            <Text style={styles.searchButtonText}>Αναζήτηση</Text>
           </Pressable>
-        )}
-      </View>
+        </View>
 
-      <View style={styles.statusBox}>
-        {loading ? <ActivityIndicator /> : null}
-        <Text style={styles.statusText}>{status}</Text>
-      </View>
+        <FlatList
+          horizontal
+          data={categories}
+          keyExtractor={(x) => x[0]}
+          showsHorizontalScrollIndicator={false}
+          style={styles.categoriesList}
+          contentContainerStyle={styles.categories}
+          renderItem={({ item }) => (
+            <Pressable
+              style={[styles.category, lastCategory === item[0] && styles.categoryActive]}
+              onPress={() => {
+                setLastCategory(item[0]);
+                searchMapbox(item[0]);
+              }}
+            >
+              <Text style={styles.categoryText} numberOfLines={1}>{item[1]}</Text>
+            </Pressable>
+          )}
+        />
 
-      <FlatList
-        data={items}
-        keyExtractor={(x) => x.id}
-        style={styles.results}
-        contentContainerStyle={styles.resultsContent}
-        renderItem={({ item, index }) => (
-          <Pressable style={styles.resultCard} onPress={() => selectPoi(item)}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.resultTitle}>{index + 1}. {item.name}</Text>
-              <Text style={styles.resultMeta}>{fmtDistance(item.distance)} · {item.address}</Text>
-            </View>
-            <Text style={styles.startText}>▶</Text>
-          </Pressable>
-        )}
-      />
+        <View style={styles.statusBox}>
+          {loading ? <ActivityIndicator /> : null}
+          <Text style={styles.statusText}>{status}</Text>
+        </View>
+
+        {items.length > 0 ? (
+          <View style={styles.resultsBlock}>
+            <Text style={styles.resultsTitle}>Κοντινά σημεία</Text>
+            {items.map((item, index) => (
+              <Pressable key={item.id} style={styles.resultCard} onPress={() => selectPoi(item)}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.resultTitle} numberOfLines={1}>{index + 1}. {item.name}</Text>
+                  <Text style={styles.resultMeta} numberOfLines={2}>{fmtDistance(item.distance)} · {item.address}</Text>
+                </View>
+                <Text style={styles.startText}>▶</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
+        <View style={styles.mapWrap}>
+          {token ? (
+            <Mapbox.MapView style={styles.map} styleURL={Mapbox.StyleURL.Street}>
+              <Mapbox.Camera ref={camera} zoomLevel={13} centerCoordinate={center} />
+              {position ? <Mapbox.LocationPuck puckBearingEnabled pulsing={{ isEnabled: true }} /> : null}
+              {selected ? (
+                <Mapbox.PointAnnotation id="selected-destination" coordinate={[selected.point.lng, selected.point.lat]} />
+              ) : null}
+            </Mapbox.MapView>
+          ) : (
+            <Pressable style={styles.mapPlaceholder} onPress={() => setSettingsOpen(true)}>
+              <Text style={styles.mapPlaceholderTitle}>Mapbox token δεν έχει οριστεί</Text>
+              <Text style={styles.mapPlaceholderText}>Πάτησε εδώ για να προσθέσεις public token (pk…).</Text>
+            </Pressable>
+          )}
+        </View>
+      </ScrollView>
 
       <Modal visible={settingsOpen} transparent animationType="slide" onRequestClose={() => setSettingsOpen(false)}>
         <View style={styles.modalBackdrop}>
@@ -361,52 +346,54 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#080b10' },
+  screen: { paddingBottom: 28 },
   header: {
-    paddingHorizontal: 18,
-    paddingTop: 10,
-    paddingBottom: 12,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  eyebrow: { color: '#5ba8ff', letterSpacing: 5, fontSize: 12, fontWeight: '800' },
-  title: { color: '#fff', fontSize: 24, fontWeight: '800', marginTop: 2 },
-  headerButton: { width: 52, height: 52, borderRadius: 18, backgroundColor: '#141b24', alignItems: 'center', justifyContent: 'center' },
-  headerButtonText: { color: '#fff', fontSize: 24 },
+  eyebrow: { color: '#5ba8ff', letterSpacing: 4, fontSize: 11, fontWeight: '800' },
+  title: { color: '#fff', fontSize: 23, fontWeight: '800', marginTop: 2 },
+  headerButton: { width: 46, height: 46, borderRadius: 15, backgroundColor: '#141b24', alignItems: 'center', justifyContent: 'center' },
+  headerButtonText: { color: '#fff', fontSize: 23 },
   gpsBar: {
     marginHorizontal: 16,
-    padding: 16,
-    borderRadius: 24,
+    padding: 14,
+    borderRadius: 20,
     backgroundColor: '#161d27',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  gpsValue: { color: '#5ce1d3', fontSize: 18, fontWeight: '800' },
-  gpsMeta: { color: '#9ca7b7', marginTop: 4, fontSize: 12 },
-  centerButton: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#218cff', alignItems: 'center', justifyContent: 'center' },
-  centerButtonText: { color: '#fff', fontSize: 25, fontWeight: '800' },
-  searchRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 12 },
-  searchInput: { flex: 1, minHeight: 52, borderRadius: 17, backgroundColor: '#151b24', color: '#fff', paddingHorizontal: 14 },
-  searchButton: { paddingHorizontal: 16, borderRadius: 17, backgroundColor: '#218cff', alignItems: 'center', justifyContent: 'center' },
+  gpsValue: { color: '#5ce1d3', fontSize: 17, fontWeight: '800' },
+  gpsMeta: { color: '#9ca7b7', marginTop: 3, fontSize: 12 },
+  centerButton: { width: 44, height: 44, borderRadius: 15, backgroundColor: '#218cff', alignItems: 'center', justifyContent: 'center', marginLeft: 10 },
+  centerButtonText: { color: '#fff', fontSize: 23, fontWeight: '800' },
+  searchRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 10 },
+  searchInput: { flex: 1, minHeight: 48, borderRadius: 15, backgroundColor: '#151b24', color: '#fff', paddingHorizontal: 13 },
+  searchButton: { paddingHorizontal: 14, borderRadius: 15, backgroundColor: '#218cff', alignItems: 'center', justifyContent: 'center' },
   searchButtonText: { color: '#fff', fontWeight: '800' },
-  categories: { paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
-  category: { paddingHorizontal: 14, paddingVertical: 11, borderRadius: 15, backgroundColor: '#171e28' },
-  categoryActive: { backgroundColor: '#213b5d' },
-  categoryText: { color: '#fff', fontWeight: '700' },
-  mapWrap: { height: 260, marginHorizontal: 16, borderRadius: 24, overflow: 'hidden', backgroundColor: '#111720' },
+  categoriesList: { flexGrow: 0, maxHeight: 62 },
+  categories: { paddingHorizontal: 16, paddingVertical: 8, gap: 7, alignItems: 'center' },
+  category: { height: 42, paddingHorizontal: 13, borderRadius: 21, backgroundColor: '#171e28', alignItems: 'center', justifyContent: 'center' },
+  categoryActive: { backgroundColor: '#213b5d', borderWidth: 1, borderColor: '#3d8fe8' },
+  categoryText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  statusBox: { minHeight: 44, marginHorizontal: 16, borderRadius: 14, backgroundColor: '#111720', paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', gap: 10, alignItems: 'center' },
+  statusText: { color: '#cbd5e1', flex: 1, fontSize: 13 },
+  resultsBlock: { marginHorizontal: 16, marginTop: 10, gap: 7 },
+  resultsTitle: { color: '#fff', fontSize: 18, fontWeight: '900', marginBottom: 2 },
+  resultCard: { minHeight: 64, borderRadius: 16, backgroundColor: '#171e28', paddingHorizontal: 13, paddingVertical: 10, flexDirection: 'row', alignItems: 'center' },
+  resultTitle: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  resultMeta: { color: '#9ca7b7', marginTop: 4, fontSize: 12 },
+  startText: { color: '#4aa3ff', fontSize: 22, paddingLeft: 10 },
+  mapWrap: { height: 250, marginHorizontal: 16, marginTop: 12, borderRadius: 22, overflow: 'hidden', backgroundColor: '#111720' },
   map: { flex: 1 },
   mapPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   mapPlaceholderTitle: { color: '#fff', fontSize: 18, fontWeight: '800', textAlign: 'center' },
   mapPlaceholderText: { color: '#9ca7b7', textAlign: 'center', marginTop: 8 },
-  statusBox: { minHeight: 50, marginHorizontal: 16, marginTop: 10, borderRadius: 16, backgroundColor: '#111720', padding: 12, flexDirection: 'row', gap: 10, alignItems: 'center' },
-  statusText: { color: '#cbd5e1', flex: 1 },
-  results: { flex: 1 },
-  resultsContent: { padding: 16, paddingBottom: 28, gap: 9 },
-  resultCard: { minHeight: 74, borderRadius: 18, backgroundColor: '#171e28', padding: 14, flexDirection: 'row', alignItems: 'center' },
-  resultTitle: { color: '#fff', fontSize: 17, fontWeight: '800' },
-  resultMeta: { color: '#9ca7b7', marginTop: 5 },
-  startText: { color: '#4aa3ff', fontSize: 23, paddingLeft: 12 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,.68)', justifyContent: 'flex-end' },
   modalCard: { backgroundColor: '#10161f', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 22, paddingBottom: 34 },
   modalTitle: { color: '#fff', fontSize: 22, fontWeight: '900' },
