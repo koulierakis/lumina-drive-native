@@ -1,0 +1,50 @@
+name: EAS Android Preview Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+      - 'assets/**'
+      - 'package.json'
+      - 'yarn.lock'
+      - 'package-lock.json'
+      - 'app.json'
+      - 'eas.json'
+      - '.github/workflows/eas-preview-build.yml'
+
+concurrency:
+  group: eas-android-preview-main
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Expo and EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Verify Expo authentication
+        run: eas whoami
+
+      - name: Build Android preview APK
+        run: eas build --platform android --profile preview --non-interactive --no-wait
