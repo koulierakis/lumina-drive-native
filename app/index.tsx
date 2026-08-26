@@ -115,6 +115,7 @@ export default function HomeScreen() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [position, setPosition] = useState<Point | null>(null);
   const [accuracy, setAccuracy] = useState<number | null>(null);
+  const [speedKmh, setSpeedKmh] = useState(0);
   const [gpsError, setGpsError] = useState('');
   const [loading, setLoading] = useState(false);
   const [routeLoading, setRouteLoading] = useState(false);
@@ -149,12 +150,14 @@ export default function HomeScreen() {
       const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       setPosition({ lat: current.coords.latitude, lng: current.coords.longitude });
       setAccuracy(current.coords.accuracy ?? null);
+      setSpeedKmh(Math.max(0, Math.round((current.coords.speed ?? 0) * 3.6)));
       setStatus('GPS ενεργό');
       sub = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.High, distanceInterval: 5, timeInterval: 3000 },
         (loc) => {
           setPosition({ lat: loc.coords.latitude, lng: loc.coords.longitude });
           setAccuracy(loc.coords.accuracy ?? null);
+          setSpeedKmh(Math.max(0, Math.round((loc.coords.speed ?? 0) * 3.6)));
           setGpsError('');
         },
       );
@@ -372,29 +375,37 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.screen} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
-          <View>
-            <Text style={styles.eyebrow}>LUMINA</Text>
-            <Text style={styles.title}>Drive Assistant</Text>
+          <View style={styles.brandRow}>
+            <View style={styles.brandMark}><Text style={styles.brandMarkText}>L</Text></View>
+            <View>
+              <Text style={styles.eyebrow}>LUMINA</Text>
+              <Text style={styles.title}>DRIVE</Text>
+            </View>
           </View>
-          <Pressable style={styles.headerButton} onPress={() => setSettingsOpen(true)}>
-            <Text style={styles.headerButtonText}>☰</Text>
-          </Pressable>
+          <View style={styles.headerActions}>
+            <View style={styles.livePill}><View style={styles.liveDot} /><Text style={styles.liveText}>LIVE</Text></View>
+            <Pressable style={styles.headerButton} onPress={() => setSettingsOpen(true)}>
+              <Text style={styles.headerButtonText}>☰</Text>
+            </Pressable>
+          </View>
         </View>
 
         {route ? (
           <View style={[styles.turnBanner, navigationActive && styles.turnBannerActive]}>
+            <View style={styles.turnIconWrap}><Text style={styles.turnIcon}>↗</Text></View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.turnEyebrow}>{navigationActive ? 'ΚΑΘΟΔΗΓΗΣΗ ΕΝΕΡΓΗ' : 'ΔΙΑΔΡΟΜΗ ΕΤΟΙΜΗ'} · {selected?.name}</Text>
+              <Text style={styles.turnEyebrow}>{navigationActive ? 'ΚΑΘΟΔΗΓΗΣΗ ΕΝΕΡΓΗ' : 'ΔΙΑΔΡΟΜΗ ΕΤΟΙΜΗ'}</Text>
+              <Text style={styles.turnDestination} numberOfLines={1}>{selected?.name}</Text>
               <Text style={styles.turnInstruction}>{activeInstruction}</Text>
               <Text style={styles.turnMeta}>
                 {navigationActive && distanceToNextManeuver != null
-                  ? `${fmtDistance(distanceToNextManeuver)} μέχρι την επόμενη οδηγία · `
+                  ? `${fmtDistance(distanceToNextManeuver)} ως την επόμενη κίνηση  •  `
                   : ''}
-                {fmtDistance(route.distance)} · {fmtDuration(route.duration)}
+                {fmtDistance(route.distance)}  •  {fmtDuration(route.duration)}
               </Text>
               {!navigationActive ? (
                 <Pressable style={styles.beginButton} onPress={beginGuidance}>
-                  <Text style={styles.beginButtonText}>▶ ΕΝΑΡΞΗ ΚΑΘΟΔΗΓΗΣΗΣ</Text>
+                  <Text style={styles.beginButtonText}>▶  ΕΝΑΡΞΗ ΚΑΘΟΔΗΓΗΣΗΣ</Text>
                 </Pressable>
               ) : null}
             </View>
@@ -406,38 +417,47 @@ export default function HomeScreen() {
 
         {!navigationActive ? (
           <>
-            <View style={styles.gpsBar}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.gpsValue}>{position ? 'GPS ενεργό' : 'GPS αναμονή'}</Text>
+            <View style={styles.dashboardCard}>
+              <View style={styles.speedPanel}>
+                <Text style={styles.speedNumber}>{speedKmh}</Text>
+                <Text style={styles.speedUnit}>km/h</Text>
+              </View>
+              <View style={styles.dashboardDivider} />
+              <View style={styles.gpsPanel}>
+                <View style={styles.gpsStatusRow}>
+                  <View style={[styles.gpsDot, !position && styles.gpsDotOff]} />
+                  <Text style={styles.gpsValue}>{position ? 'GPS CONNECTED' : 'GPS WAITING'}</Text>
+                </View>
                 <Text style={styles.gpsMeta} numberOfLines={1}>
                   {position
-                    ? `${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}${accuracy ? ` · ±${Math.round(accuracy)}m` : ''}`
+                    ? `${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}${accuracy ? `  •  ±${Math.round(accuracy)}m` : ''}`
                     : gpsError || 'Αναμονή πραγματικής θέσης'}
                 </Text>
               </View>
               <Pressable
                 style={styles.centerButton}
-                onPress={() =>
-                  center && camera.current?.setCamera({ centerCoordinate: center, zoomLevel: 15, animationDuration: 500 })
-                }
+                onPress={() => center && camera.current?.setCamera({ centerCoordinate: center, zoomLevel: 15, animationDuration: 500 })}
               >
                 <Text style={styles.centerButtonText}>◎</Text>
               </Pressable>
             </View>
 
-            <View style={styles.searchRow}>
-              <TextInput
-                value={query}
-                onChangeText={setQuery}
-                placeholder="Όνομα ή διεύθυνση…"
-                placeholderTextColor="#7d8796"
-                style={styles.searchInput}
-                returnKeyType="search"
-                onSubmitEditing={() => searchMapbox(query)}
-              />
-              <Pressable style={styles.searchButton} onPress={() => searchMapbox(query)}>
-                <Text style={styles.searchButtonText}>Αναζήτηση</Text>
-              </Pressable>
+            <View style={styles.searchCard}>
+              <Text style={styles.sectionKicker}>DESTINATION</Text>
+              <View style={styles.searchRow}>
+                <TextInput
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder="Αναζήτηση προορισμού…"
+                  placeholderTextColor="#6f7785"
+                  style={styles.searchInput}
+                  returnKeyType="search"
+                  onSubmitEditing={() => searchMapbox(query)}
+                />
+                <Pressable style={styles.searchButton} onPress={() => searchMapbox(query)}>
+                  <Text style={styles.searchButtonText}>⌕</Text>
+                </Pressable>
+              </View>
             </View>
 
             <FlatList
@@ -455,26 +475,30 @@ export default function HomeScreen() {
                     searchMapbox(item[0]);
                   }}
                 >
-                  <Text style={styles.categoryText} numberOfLines={1}>{item[1]}</Text>
+                  <Text style={[styles.categoryText, lastCategory === item[0] && styles.categoryTextActive]} numberOfLines={1}>{item[1]}</Text>
                 </Pressable>
               )}
             />
 
             <View style={styles.statusBox}>
-              {loading || routeLoading ? <ActivityIndicator /> : null}
+              {loading || routeLoading ? <ActivityIndicator /> : <View style={styles.statusDot} />}
               <Text style={styles.statusText}>{status}</Text>
             </View>
 
             {items.length > 0 ? (
               <View style={styles.resultsBlock}>
-                <Text style={styles.resultsTitle}>Κοντινά σημεία</Text>
+                <View style={styles.resultsHeader}>
+                  <Text style={styles.resultsTitle}>Κοντινά σημεία</Text>
+                  <Text style={styles.resultsCount}>{items.length} RESULTS</Text>
+                </View>
                 {items.map((item, index) => (
                   <Pressable key={item.id} style={styles.resultCard} onPress={() => calculateRoute(item)}>
+                    <View style={styles.resultIndex}><Text style={styles.resultIndexText}>{index + 1}</Text></View>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.resultTitle} numberOfLines={1}>{index + 1}. {item.name}</Text>
-                      <Text style={styles.resultMeta} numberOfLines={2}>{fmtDistance(item.distance)} · {item.address}</Text>
+                      <Text style={styles.resultTitle} numberOfLines={1}>{item.name}</Text>
+                      <Text style={styles.resultMeta} numberOfLines={2}>{fmtDistance(item.distance)}  •  {item.address}</Text>
                     </View>
-                    <Text style={styles.startText}>▶</Text>
+                    <View style={styles.routeArrow}><Text style={styles.startText}>›</Text></View>
                   </Pressable>
                 ))}
               </View>
@@ -482,36 +506,44 @@ export default function HomeScreen() {
           </>
         ) : null}
 
-        <View style={[styles.mapWrap, navigationActive && styles.mapWrapNavigation]}>
-          {token ? (
-            <Mapbox.MapView style={styles.map} styleURL={Mapbox.StyleURL.Street}>
-              <Mapbox.Camera ref={camera} zoomLevel={13} centerCoordinate={center} />
-              {position ? <Mapbox.LocationPuck puckBearingEnabled pulsing={{ isEnabled: true }} /> : null}
-              {route ? (
-                <Mapbox.ShapeSource id="navigation-route" shape={route.geometry}>
-                  <Mapbox.LineLayer
-                    id="navigation-route-line"
-                    style={{ lineColor: '#2d96ff', lineWidth: navigationActive ? 9 : 7, lineCap: 'round', lineJoin: 'round' }}
-                  />
-                </Mapbox.ShapeSource>
-              ) : null}
-              {selected ? (
-                <Mapbox.PointAnnotation id="selected-destination" coordinate={[selected.point.lng, selected.point.lat]} />
-              ) : null}
-            </Mapbox.MapView>
-          ) : (
-            <Pressable style={styles.mapPlaceholder} onPress={() => setSettingsOpen(true)}>
-              <Text style={styles.mapPlaceholderTitle}>Mapbox token δεν έχει οριστεί</Text>
-              <Text style={styles.mapPlaceholderText}>Πάτησε εδώ για να προσθέσεις public token (pk…).</Text>
-            </Pressable>
-          )}
+        <View style={[styles.mapFrame, navigationActive && styles.mapFrameNavigation]}>
+          <View style={styles.mapTopBar}>
+            <Text style={styles.mapTopText}>{navigationActive ? 'LIVE NAVIGATION' : 'MAP'}</Text>
+            <Text style={styles.mapTopRight}>{navigationActive ? `${speedKmh} km/h` : 'MAPBOX'}</Text>
+          </View>
+          <View style={[styles.mapWrap, navigationActive && styles.mapWrapNavigation]}>
+            {token ? (
+              <Mapbox.MapView style={styles.map} styleURL={Mapbox.StyleURL.Street}>
+                <Mapbox.Camera ref={camera} zoomLevel={13} centerCoordinate={center} />
+                {position ? <Mapbox.LocationPuck puckBearingEnabled pulsing={{ isEnabled: true }} /> : null}
+                {route ? (
+                  <Mapbox.ShapeSource id="navigation-route" shape={route.geometry}>
+                    <Mapbox.LineLayer
+                      id="navigation-route-line"
+                      style={{ lineColor: '#73C7FF', lineWidth: navigationActive ? 9 : 7, lineCap: 'round', lineJoin: 'round' }}
+                    />
+                  </Mapbox.ShapeSource>
+                ) : null}
+                {selected ? (
+                  <Mapbox.PointAnnotation id="selected-destination" coordinate={[selected.point.lng, selected.point.lat]} />
+                ) : null}
+              </Mapbox.MapView>
+            ) : (
+              <Pressable style={styles.mapPlaceholder} onPress={() => setSettingsOpen(true)}>
+                <Text style={styles.mapPlaceholderTitle}>Mapbox token δεν έχει οριστεί</Text>
+                <Text style={styles.mapPlaceholderText}>Πάτησε εδώ για να προσθέσεις public token.</Text>
+              </Pressable>
+            )}
+          </View>
         </View>
       </ScrollView>
 
       <Modal visible={settingsOpen} transparent animationType="slide" onRequestClose={() => setSettingsOpen(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Mapbox — Σημεία ενδιαφέροντος</Text>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalKicker}>SYSTEM SETTINGS</Text>
+            <Text style={styles.modalTitle}>Mapbox access</Text>
             <Text style={styles.modalText}>
               {token ? 'Public token αποθηκευμένο σε αυτή τη συσκευή.' : 'Δεν υπάρχει αποθηκευμένο Mapbox token.'}
             </Text>
@@ -521,11 +553,11 @@ export default function HomeScreen() {
               value={tokenDraft}
               onChangeText={setTokenDraft}
               placeholder="Mapbox public token (pk....)"
-              placeholderTextColor="#7d8796"
+              placeholderTextColor="#6f7785"
               style={styles.modalInput}
             />
             <Pressable style={styles.modalSave} onPress={saveToken}>
-              <Text style={styles.modalSaveText}>Αποθήκευση token</Text>
+              <Text style={styles.modalSaveText}>ΑΠΟΘΗΚΕΥΣΗ TOKEN</Text>
             </Pressable>
             <Pressable style={styles.modalClose} onPress={() => setSettingsOpen(false)}>
               <Text style={styles.modalCloseText}>Κλείσιμο</Text>
@@ -538,57 +570,99 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#080b10' },
-  screen: { paddingBottom: 28 },
-  header: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  eyebrow: { color: '#5ba8ff', letterSpacing: 4, fontSize: 11, fontWeight: '800' },
-  title: { color: '#fff', fontSize: 23, fontWeight: '800', marginTop: 2 },
-  headerButton: { width: 46, height: 46, borderRadius: 15, backgroundColor: '#141b24', alignItems: 'center', justifyContent: 'center' },
-  headerButtonText: { color: '#fff', fontSize: 25, fontWeight: '700' },
-  turnBanner: { marginHorizontal: 16, marginBottom: 10, padding: 14, backgroundColor: '#0f3153', borderRadius: 18, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#2d96ff' },
-  turnBannerActive: { backgroundColor: '#0b2239', borderColor: '#5ce1d2' },
-  turnEyebrow: { color: '#69b5ff', fontSize: 11, fontWeight: '900', letterSpacing: 1.5 },
-  turnInstruction: { color: '#fff', fontSize: 20, fontWeight: '900', marginTop: 4 },
-  turnMeta: { color: '#b9cde1', fontSize: 15, marginTop: 5, fontWeight: '700' },
-  beginButton: { marginTop: 12, minHeight: 48, borderRadius: 15, backgroundColor: '#2d96ff', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
-  beginButtonText: { color: '#fff', fontSize: 15, fontWeight: '900', letterSpacing: 0.5 },
-  stopButton: { width: 42, height: 42, borderRadius: 14, backgroundColor: '#1c2b3a', alignItems: 'center', justifyContent: 'center', marginLeft: 10 },
-  stopButtonText: { color: '#fff', fontSize: 19, fontWeight: '900' },
-  gpsBar: { marginHorizontal: 16, marginBottom: 12, padding: 15, borderRadius: 22, backgroundColor: '#141b24', flexDirection: 'row', alignItems: 'center' },
-  gpsValue: { color: '#5ce1d2', fontSize: 18, fontWeight: '900' },
-  gpsMeta: { color: '#8e99a9', fontSize: 14, marginTop: 4 },
-  centerButton: { width: 52, height: 52, borderRadius: 16, backgroundColor: '#2d96ff', alignItems: 'center', justifyContent: 'center', marginLeft: 12 },
-  centerButtonText: { color: '#fff', fontSize: 25, fontWeight: '900' },
-  searchRow: { flexDirection: 'row', gap: 8, marginHorizontal: 16, marginBottom: 10 },
-  searchInput: { flex: 1, backgroundColor: '#141b24', color: '#fff', borderRadius: 18, paddingHorizontal: 15, minHeight: 52, fontSize: 16 },
-  searchButton: { backgroundColor: '#2d96ff', borderRadius: 18, minHeight: 52, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
-  searchButtonText: { color: '#fff', fontSize: 16, fontWeight: '900' },
-  categoriesList: { marginBottom: 10 },
+  safe: { flex: 1, backgroundColor: '#05070B' },
+  screen: { paddingBottom: 32 },
+  header: { paddingHorizontal: 18, paddingTop: 10, paddingBottom: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  brandMark: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#D8B66B', alignItems: 'center', justifyContent: 'center', shadowColor: '#D8B66B', shadowOpacity: 0.24, shadowRadius: 12, elevation: 4 },
+  brandMarkText: { color: '#070A0F', fontSize: 20, fontWeight: '900' },
+  eyebrow: { color: '#8E98A8', letterSpacing: 4.5, fontSize: 10, fontWeight: '800' },
+  title: { color: '#F7F8FA', fontSize: 24, fontWeight: '900', marginTop: 1, letterSpacing: 1.2 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  livePill: { minHeight: 34, paddingHorizontal: 11, borderRadius: 12, backgroundColor: '#0E141C', borderWidth: 1, borderColor: '#1C2632', flexDirection: 'row', alignItems: 'center', gap: 6 },
+  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#55E6B8' },
+  liveText: { color: '#AEB8C5', fontSize: 10, fontWeight: '900', letterSpacing: 1.2 },
+  headerButton: { width: 42, height: 42, borderRadius: 14, backgroundColor: '#0E141C', borderWidth: 1, borderColor: '#1C2632', alignItems: 'center', justifyContent: 'center' },
+  headerButtonText: { color: '#E8EBEF', fontSize: 21, fontWeight: '700' },
+
+  dashboardCard: { marginHorizontal: 16, marginBottom: 14, minHeight: 112, borderRadius: 24, backgroundColor: '#0B1017', borderWidth: 1, borderColor: '#1B2530', paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center' },
+  speedPanel: { width: 78, alignItems: 'center', justifyContent: 'center' },
+  speedNumber: { color: '#F8FAFC', fontSize: 40, fontWeight: '300', letterSpacing: -1.5 },
+  speedUnit: { color: '#6F7B8A', fontSize: 11, fontWeight: '800', letterSpacing: 1.3, marginTop: -2 },
+  dashboardDivider: { width: 1, height: 58, backgroundColor: '#202A36', marginHorizontal: 15 },
+  gpsPanel: { flex: 1 },
+  gpsStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  gpsDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#55E6B8' },
+  gpsDotOff: { backgroundColor: '#7B8491' },
+  gpsValue: { color: '#D7DEE7', fontSize: 12, fontWeight: '900', letterSpacing: 1.2 },
+  gpsMeta: { color: '#747F8D', fontSize: 12, marginTop: 7 },
+  centerButton: { width: 46, height: 46, borderRadius: 15, backgroundColor: '#111A24', borderWidth: 1, borderColor: '#263443', alignItems: 'center', justifyContent: 'center', marginLeft: 10 },
+  centerButtonText: { color: '#78C9FF', fontSize: 23, fontWeight: '900' },
+
+  searchCard: { marginHorizontal: 16, marginBottom: 10, padding: 14, borderRadius: 22, backgroundColor: '#0B1017', borderWidth: 1, borderColor: '#1B2530' },
+  sectionKicker: { color: '#697482', fontSize: 10, fontWeight: '900', letterSpacing: 1.8, marginBottom: 9 },
+  searchRow: { flexDirection: 'row', gap: 8 },
+  searchInput: { flex: 1, backgroundColor: '#070B10', borderWidth: 1, borderColor: '#1B2530', color: '#F4F6F8', borderRadius: 16, paddingHorizontal: 14, minHeight: 50, fontSize: 16 },
+  searchButton: { width: 52, minHeight: 50, backgroundColor: '#D8B66B', borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  searchButtonText: { color: '#070A0F', fontSize: 27, fontWeight: '500', marginTop: -2 },
+
+  categoriesList: { marginBottom: 11 },
   categories: { paddingHorizontal: 16, gap: 8 },
-  category: { backgroundColor: '#141b24', borderRadius: 17, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: 'transparent' },
-  categoryActive: { borderColor: '#2d96ff', backgroundColor: '#17314c' },
-  categoryText: { color: '#fff', fontSize: 15, fontWeight: '800' },
-  statusBox: { marginHorizontal: 16, marginBottom: 14, padding: 13, borderRadius: 16, backgroundColor: '#111820', flexDirection: 'row', alignItems: 'center', gap: 9 },
-  statusText: { color: '#c8d0db', fontSize: 15, flex: 1 },
-  resultsBlock: { marginHorizontal: 16, marginBottom: 12 },
-  resultsTitle: { color: '#fff', fontSize: 22, fontWeight: '900', marginBottom: 10 },
-  resultCard: { minHeight: 78, backgroundColor: '#141b24', borderRadius: 18, padding: 14, marginBottom: 8, flexDirection: 'row', alignItems: 'center' },
-  resultTitle: { color: '#fff', fontSize: 18, fontWeight: '900' },
-  resultMeta: { color: '#97a2b1', fontSize: 14, marginTop: 5, lineHeight: 19 },
-  startText: { color: '#4aa8ff', fontSize: 28, fontWeight: '900', marginLeft: 10 },
-  mapWrap: { height: 420, marginHorizontal: 16, borderRadius: 24, overflow: 'hidden', backgroundColor: '#111820' },
-  mapWrapNavigation: { height: 610, borderRadius: 20 },
+  category: { backgroundColor: '#0C1219', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: '#1A2430' },
+  categoryActive: { borderColor: '#D8B66B', backgroundColor: '#19170F' },
+  categoryText: { color: '#AEB7C3', fontSize: 14, fontWeight: '700' },
+  categoryTextActive: { color: '#F0D79C' },
+
+  statusBox: { marginHorizontal: 16, marginBottom: 15, paddingHorizontal: 13, minHeight: 44, borderRadius: 15, backgroundColor: '#090E14', borderWidth: 1, borderColor: '#18212B', flexDirection: 'row', alignItems: 'center', gap: 9 },
+  statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#55E6B8' },
+  statusText: { color: '#98A3B1', fontSize: 13, flex: 1 },
+
+  resultsBlock: { marginHorizontal: 16, marginBottom: 14 },
+  resultsHeader: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 10 },
+  resultsTitle: { color: '#F7F8FA', fontSize: 21, fontWeight: '800' },
+  resultsCount: { color: '#687483', fontSize: 10, fontWeight: '900', letterSpacing: 1.3, paddingBottom: 3 },
+  resultCard: { minHeight: 76, backgroundColor: '#0B1017', borderWidth: 1, borderColor: '#1B2530', borderRadius: 19, padding: 12, marginBottom: 8, flexDirection: 'row', alignItems: 'center' },
+  resultIndex: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#121A24', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  resultIndexText: { color: '#D8B66B', fontSize: 13, fontWeight: '900' },
+  resultTitle: { color: '#F4F6F8', fontSize: 16, fontWeight: '800' },
+  resultMeta: { color: '#7D8896', fontSize: 13, marginTop: 4, lineHeight: 18 },
+  routeArrow: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#111A24', alignItems: 'center', justifyContent: 'center', marginLeft: 10 },
+  startText: { color: '#78C9FF', fontSize: 28, fontWeight: '400', marginTop: -2 },
+
+  turnBanner: { marginHorizontal: 16, marginBottom: 14, padding: 15, backgroundColor: '#0A111A', borderRadius: 23, flexDirection: 'row', alignItems: 'flex-start', borderWidth: 1, borderColor: '#264158' },
+  turnBannerActive: { backgroundColor: '#071511', borderColor: '#2C6C59' },
+  turnIconWrap: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#101D29', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  turnIcon: { color: '#78C9FF', fontSize: 25, fontWeight: '800' },
+  turnEyebrow: { color: '#6D7A88', fontSize: 9, fontWeight: '900', letterSpacing: 1.7 },
+  turnDestination: { color: '#D8B66B', fontSize: 13, fontWeight: '800', marginTop: 4 },
+  turnInstruction: { color: '#F7F8FA', fontSize: 20, fontWeight: '800', marginTop: 7, lineHeight: 25 },
+  turnMeta: { color: '#8D99A8', fontSize: 13, marginTop: 7, fontWeight: '600' },
+  beginButton: { marginTop: 13, minHeight: 49, borderRadius: 15, backgroundColor: '#D8B66B', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
+  beginButtonText: { color: '#070A0F', fontSize: 13, fontWeight: '900', letterSpacing: 0.8 },
+  stopButton: { width: 38, height: 38, borderRadius: 13, backgroundColor: '#121A22', borderWidth: 1, borderColor: '#26323E', alignItems: 'center', justifyContent: 'center', marginLeft: 8 },
+  stopButtonText: { color: '#E6EAF0', fontSize: 17, fontWeight: '800' },
+
+  mapFrame: { marginHorizontal: 16, borderRadius: 25, overflow: 'hidden', borderWidth: 1, borderColor: '#1D2834', backgroundColor: '#090E14' },
+  mapFrameNavigation: { borderColor: '#2C6C59' },
+  mapTopBar: { height: 38, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#090E14' },
+  mapTopText: { color: '#798593', fontSize: 9, fontWeight: '900', letterSpacing: 1.6 },
+  mapTopRight: { color: '#D8B66B', fontSize: 10, fontWeight: '900', letterSpacing: 1.2 },
+  mapWrap: { height: 390, overflow: 'hidden', backgroundColor: '#0A1017' },
+  mapWrapNavigation: { height: 610 },
   map: { flex: 1 },
   mapPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  mapPlaceholderTitle: { color: '#fff', fontSize: 20, fontWeight: '900', textAlign: 'center' },
-  mapPlaceholderText: { color: '#9aa5b4', fontSize: 15, textAlign: 'center', marginTop: 8 },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.72)', justifyContent: 'flex-end' },
-  modalCard: { backgroundColor: '#111820', padding: 20, paddingBottom: 32, borderTopLeftRadius: 28, borderTopRightRadius: 28 },
-  modalTitle: { color: '#fff', fontSize: 22, fontWeight: '900' },
-  modalText: { color: '#9aa5b4', marginTop: 8, marginBottom: 14, lineHeight: 20 },
-  modalInput: { backgroundColor: '#080b10', color: '#fff', borderRadius: 16, minHeight: 52, paddingHorizontal: 14, borderWidth: 1, borderColor: '#27313d' },
-  modalSave: { backgroundColor: '#2d96ff', borderRadius: 16, minHeight: 50, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
-  modalSaveText: { color: '#fff', fontWeight: '900', fontSize: 16 },
+  mapPlaceholderTitle: { color: '#F4F6F8', fontSize: 18, fontWeight: '800', textAlign: 'center' },
+  mapPlaceholderText: { color: '#788392', fontSize: 14, textAlign: 'center', marginTop: 8 },
+
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.78)', justifyContent: 'flex-end' },
+  modalCard: { backgroundColor: '#0B1017', borderTopWidth: 1, borderColor: '#1D2834', padding: 22, paddingBottom: 34, borderTopLeftRadius: 30, borderTopRightRadius: 30 },
+  modalHandle: { width: 44, height: 4, borderRadius: 2, backgroundColor: '#2A3440', alignSelf: 'center', marginBottom: 20 },
+  modalKicker: { color: '#697482', fontSize: 9, fontWeight: '900', letterSpacing: 1.8 },
+  modalTitle: { color: '#F7F8FA', fontSize: 23, fontWeight: '800', marginTop: 5 },
+  modalText: { color: '#84909E', marginTop: 8, marginBottom: 15, lineHeight: 20 },
+  modalInput: { backgroundColor: '#070B10', color: '#F4F6F8', borderRadius: 16, minHeight: 52, paddingHorizontal: 14, borderWidth: 1, borderColor: '#1D2834' },
+  modalSave: { backgroundColor: '#D8B66B', borderRadius: 16, minHeight: 50, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
+  modalSaveText: { color: '#070A0F', fontWeight: '900', fontSize: 13, letterSpacing: 0.8 },
   modalClose: { minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: 7 },
-  modalCloseText: { color: '#b3bdca', fontWeight: '800' },
+  modalCloseText: { color: '#9BA6B4', fontWeight: '700' },
 });
