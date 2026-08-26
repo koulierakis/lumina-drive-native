@@ -6,6 +6,12 @@
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "scheme": "luminadrive",
+    "owner": "jsaglobals-team",
+    "extra": {
+      "eas": {
+        "projectId": "c254b1b9-07b1-4ce4-8300-e36625435747"
+      }
+    },
     "plugins": [
       "expo-router",
       [
