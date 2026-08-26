@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Mapbox from '@rnmapbox/maps';
 import * as Location from 'expo-location';
+import * as Speech from 'expo-speech';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -46,6 +47,7 @@ type RouteInfo = {
 const TOKEN_KEY = 'lumina-mapbox-public-token';
 const SEARCH_API = 'https://api.mapbox.com/search/searchbox/v1/forward';
 const DIRECTIONS_API = 'https://api.mapbox.com/directions/v5/mapbox/driving';
+const VOICE_THRESHOLDS = [300, 100, 50] as const;
 const categories = [
   ['restaurant', '🍽️ Εστιατόρια'],
   ['cafe', '☕ Καφέ'],
@@ -109,6 +111,15 @@ function boundsFromCoordinates(coords: number[][]) {
   };
 }
 
+function speakGreek(message: string) {
+  Speech.stop();
+  Speech.speak(message, {
+    language: 'el-GR',
+    rate: 0.94,
+    pitch: 1.0,
+  });
+}
+
 export default function HomeScreen() {
   const [token, setToken] = useState('');
   const [tokenDraft, setTokenDraft] = useState('');
@@ -128,6 +139,8 @@ export default function HomeScreen() {
   const [query, setQuery] = useState('');
   const [lastCategory, setLastCategory] = useState('');
   const camera = useRef<Mapbox.Camera>(null);
+  const spokenMilestones = useRef<Set<string>>(new Set());
+  const arrivalSpoken = useRef(false);
 
   useEffect(() => {
     AsyncStorage.getItem(TOKEN_KEY).then((saved) => {
@@ -181,6 +194,18 @@ export default function HomeScreen() {
     const currentStep = route.steps[stepIndex];
     if (currentStep) {
       const metersToManeuver = distanceMeters(position, currentStep.point);
+
+      const threshold = metersToManeuver <= 50 ? 50 : metersToManeuver <= 100 ? 100 : metersToManeuver <= 300 ? 300 : null;
+      if (threshold != null) {
+        const key = `${stepIndex}:${threshold}`;
+        if (!spokenMilestones.current.has(key)) {
+          for (const passed of VOICE_THRESHOLDS) {
+            if (passed >= threshold) spokenMilestones.current.add(`${stepIndex}:${passed}`);
+          }
+          speakGreek(`Σε ${threshold} μέτρα, ${currentStep.instruction}`);
+        }
+      }
+
       if (metersToManeuver < 35 && stepIndex < route.steps.length - 1) {
         setStepIndex((value) => Math.min(value + 1, route.steps.length - 1));
       }
@@ -188,6 +213,10 @@ export default function HomeScreen() {
 
     if (selected && distanceMeters(position, selected.point) < 30) {
       setStatus(`Έφτασες στο ${selected.name}`);
+      if (!arrivalSpoken.current) {
+        arrivalSpoken.current = true;
+        speakGreek(`Έφτασες στον προορισμό σου, ${selected.name}`);
+      }
     }
   }, [navigationActive, position, route, selected, stepIndex]);
 
@@ -238,6 +267,9 @@ export default function HomeScreen() {
     setRoute(null);
     setNavigationActive(false);
     setStepIndex(0);
+    spokenMilestones.current.clear();
+    arrivalSpoken.current = false;
+    Speech.stop();
     setStatus(`Mapbox: αναζήτηση “${q}”…`);
     try {
       const url = new URL(SEARCH_API);
@@ -290,6 +322,9 @@ export default function HomeScreen() {
     setRoute(null);
     setNavigationActive(false);
     setStepIndex(0);
+    spokenMilestones.current.clear();
+    arrivalSpoken.current = false;
+    Speech.stop();
     setStatus(`Υπολογίζω διαδρομή προς ${poi.name}…`);
     try {
       const coordinates = `${position.lng},${position.lat};${poi.point.lng},${poi.point.lat}`;
@@ -349,9 +384,12 @@ export default function HomeScreen() {
 
   function beginGuidance() {
     if (!route || !position || !selected) return;
+    spokenMilestones.current.clear();
+    arrivalSpoken.current = false;
     setNavigationActive(true);
     setStepIndex(0);
     setStatus(`Καθοδήγηση ενεργή προς ${selected.name}`);
+    speakGreek(`Η καθοδήγηση ξεκίνησε προς ${selected.name}`);
     camera.current?.setCamera({
       centerCoordinate: [position.lng, position.lat],
       zoomLevel: 16.2,
@@ -365,6 +403,9 @@ export default function HomeScreen() {
     setRoute(null);
     setSelected(null);
     setStepIndex(0);
+    spokenMilestones.current.clear();
+    arrivalSpoken.current = false;
+    Speech.stop();
     setStatus('GPS ενεργό');
     if (center) {
       camera.current?.setCamera({ centerCoordinate: center, zoomLevel: 15, pitch: 0, animationDuration: 500 });
