@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "LUMINA DRIVE",
+    "slug": "lumina-drive",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "luminadrive",
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Το LUMINA Drive χρειάζεται την τοποθεσία σας για χάρτη, κοντινά σημεία και πλοήγηση."
+        }
+      ],
+      "@rnmapbox/maps"
+    ],
+    "android": {
+      "package": "com.koulierakis.luminadrive",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
+    },
+    "ios": {
+      "bundleIdentifier": "com.koulierakis.luminadrive",
+      "supportsTablet": false
+    }
+  }
+}
