@@ -25,9 +25,20 @@ type Poi = {
   point: Point;
   distance: number;
 };
+type RouteInfo = {
+  geometry: {
+    type: 'Feature';
+    properties: Record<string, never>;
+    geometry: { type: 'LineString'; coordinates: number[][] };
+  };
+  distance: number;
+  duration: number;
+  instruction: string;
+};
 
 const TOKEN_KEY = 'lumina-mapbox-public-token';
 const SEARCH_API = 'https://api.mapbox.com/search/searchbox/v1/forward';
+const DIRECTIONS_API = 'https://api.mapbox.com/directions/v5/mapbox/driving';
 const categories = [
   ['restaurant', '🍽️ Εστιατόρια'],
   ['cafe', '☕ Καφέ'],
@@ -66,6 +77,31 @@ function fmtDistance(m: number) {
   return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`;
 }
 
+function fmtDuration(seconds: number) {
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  if (minutes < 60) return `${minutes} λεπ`;
+  const h = Math.floor(minutes / 60);
+  const min = minutes % 60;
+  return min ? `${h} ω ${min} λεπ` : `${h} ω`;
+}
+
+function boundsFromCoordinates(coords: number[][]) {
+  let minLng = coords[0][0];
+  let maxLng = coords[0][0];
+  let minLat = coords[0][1];
+  let maxLat = coords[0][1];
+  for (const [lng, lat] of coords) {
+    minLng = Math.min(minLng, lng);
+    maxLng = Math.max(maxLng, lng);
+    minLat = Math.min(minLat, lat);
+    maxLat = Math.max(maxLat, lat);
+  }
+  return {
+    ne: [maxLng, maxLat] as [number, number],
+    sw: [minLng, minLat] as [number, number],
+  };
+}
+
 export default function HomeScreen() {
   const [token, setToken] = useState('');
   const [tokenDraft, setTokenDraft] = useState('');
@@ -74,9 +110,11 @@ export default function HomeScreen() {
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [gpsError, setGpsError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [routeLoading, setRouteLoading] = useState(false);
   const [status, setStatus] = useState('Περιμένω GPS…');
   const [items, setItems] = useState<Poi[]>([]);
   const [selected, setSelected] = useState<Poi | null>(null);
+  const [route, setRoute] = useState<RouteInfo | null>(null);
   const [query, setQuery] = useState('');
   const [lastCategory, setLastCategory] = useState('');
   const camera = useRef<Mapbox.Camera>(null);
@@ -109,7 +147,6 @@ export default function HomeScreen() {
           setPosition({ lat: loc.coords.latitude, lng: loc.coords.longitude });
           setAccuracy(loc.coords.accuracy ?? null);
           setGpsError('');
-          setStatus('GPS ενεργό');
         },
       );
     })().catch((e) => {
@@ -152,6 +189,7 @@ export default function HomeScreen() {
     setLoading(true);
     setItems([]);
     setSelected(null);
+    setRoute(null);
     setStatus(`Mapbox: αναζήτηση “${q}”…`);
     try {
       const url = new URL(SEARCH_API);
@@ -189,11 +227,7 @@ export default function HomeScreen() {
         .filter((x: Poi) => x.distance <= 10000)
         .sort((a: Poi, b: Poi) => a.distance - b.distance);
       setItems(parsed);
-      setStatus(
-        parsed.length
-          ? `${parsed.length} αποτελέσματα · κοντινότερο πρώτο`
-          : 'Δεν βρέθηκαν κοντινά σημεία.',
-      );
+      setStatus(parsed.length ? `${parsed.length} αποτελέσματα · κοντινότερο πρώτο` : 'Δεν βρέθηκαν κοντινά σημεία.');
     } catch (e: any) {
       setStatus(String(e?.message || e));
     } finally {
@@ -201,13 +235,64 @@ export default function HomeScreen() {
     }
   }
 
-  function selectPoi(poi: Poi) {
+  async function startNavigation(poi: Poi) {
+    if (!position || !token) return;
     setSelected(poi);
-    camera.current?.setCamera({
-      centerCoordinate: [poi.point.lng, poi.point.lat],
-      zoomLevel: 15,
-      animationDuration: 700,
-    });
+    setRouteLoading(true);
+    setRoute(null);
+    setStatus(`Υπολογίζω διαδρομή προς ${poi.name}…`);
+    try {
+      const coordinates = `${position.lng},${position.lat};${poi.point.lng},${poi.point.lat}`;
+      const url = new URL(`${DIRECTIONS_API}/${coordinates}`);
+      url.searchParams.set('access_token', token);
+      url.searchParams.set('geometries', 'geojson');
+      url.searchParams.set('overview', 'full');
+      url.searchParams.set('steps', 'true');
+      url.searchParams.set('language', 'el');
+      url.searchParams.set('voice_instructions', 'true');
+      const response = await fetch(url.toString(), { headers: { Accept: 'application/json' } });
+      const raw = await response.text();
+      let data: any = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {}
+      if (!response.ok) throw new Error(`Directions HTTP ${response.status}: ${data?.message || raw || 'error'}`);
+      const first = data?.routes?.[0];
+      const coords = first?.geometry?.coordinates;
+      if (!first || !Array.isArray(coords) || coords.length < 2) throw new Error('Δεν βρέθηκε οδική διαδρομή.');
+      const steps = first?.legs?.[0]?.steps || [];
+      const instruction =
+        steps.find((step: any) => step?.maneuver?.instruction)?.maneuver?.instruction ||
+        `Πορεία προς ${poi.name}`;
+      const info: RouteInfo = {
+        geometry: {
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'LineString', coordinates: coords },
+        },
+        distance: Number(first.distance || 0),
+        duration: Number(first.duration || 0),
+        instruction: String(instruction),
+      };
+      setRoute(info);
+      setStatus(`Διαδρομή έτοιμη προς ${poi.name}`);
+      const bounds = boundsFromCoordinates(coords);
+      camera.current?.fitBounds(bounds.ne, bounds.sw, [70, 45, 70, 45], 700);
+    } catch (e: any) {
+      setStatus(String(e?.message || e));
+      Alert.alert('Πλοήγηση', String(e?.message || e));
+    } finally {
+      setRouteLoading(false);
+    }
+  }
+
+  function stopNavigation() {
+    setRoute(null);
+    setSelected(null);
+    setStatus('GPS ενεργό');
+    if (center) {
+      camera.current?.setCamera({ centerCoordinate: center, zoomLevel: 15, animationDuration: 500 });
+    }
   }
 
   return (
@@ -222,6 +307,19 @@ export default function HomeScreen() {
             <Text style={styles.headerButtonText}>☰</Text>
           </Pressable>
         </View>
+
+        {route ? (
+          <View style={styles.turnBanner}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.turnEyebrow}>ΠΛΟΗΓΗΣΗ · {selected?.name}</Text>
+              <Text style={styles.turnInstruction}>{route.instruction}</Text>
+              <Text style={styles.turnMeta}>{fmtDistance(route.distance)} · {fmtDuration(route.duration)}</Text>
+            </View>
+            <Pressable style={styles.stopButton} onPress={stopNavigation}>
+              <Text style={styles.stopButtonText}>✕</Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         <View style={styles.gpsBar}>
           <View style={{ flex: 1 }}>
@@ -278,7 +376,7 @@ export default function HomeScreen() {
         />
 
         <View style={styles.statusBox}>
-          {loading ? <ActivityIndicator /> : null}
+          {loading || routeLoading ? <ActivityIndicator /> : null}
           <Text style={styles.statusText}>{status}</Text>
         </View>
 
@@ -286,7 +384,7 @@ export default function HomeScreen() {
           <View style={styles.resultsBlock}>
             <Text style={styles.resultsTitle}>Κοντινά σημεία</Text>
             {items.map((item, index) => (
-              <Pressable key={item.id} style={styles.resultCard} onPress={() => selectPoi(item)}>
+              <Pressable key={item.id} style={styles.resultCard} onPress={() => startNavigation(item)}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.resultTitle} numberOfLines={1}>{index + 1}. {item.name}</Text>
                   <Text style={styles.resultMeta} numberOfLines={2}>{fmtDistance(item.distance)} · {item.address}</Text>
@@ -302,6 +400,14 @@ export default function HomeScreen() {
             <Mapbox.MapView style={styles.map} styleURL={Mapbox.StyleURL.Street}>
               <Mapbox.Camera ref={camera} zoomLevel={13} centerCoordinate={center} />
               {position ? <Mapbox.LocationPuck puckBearingEnabled pulsing={{ isEnabled: true }} /> : null}
+              {route ? (
+                <Mapbox.ShapeSource id="navigation-route" shape={route.geometry}>
+                  <Mapbox.LineLayer
+                    id="navigation-route-line"
+                    style={{ lineColor: '#2d96ff', lineWidth: 7, lineCap: 'round', lineJoin: 'round' }}
+                  />
+                </Mapbox.ShapeSource>
+              ) : null}
               {selected ? (
                 <Mapbox.PointAnnotation id="selected-destination" coordinate={[selected.point.lng, selected.point.lat]} />
               ) : null}
@@ -347,60 +453,51 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#080b10' },
   screen: { paddingBottom: 28 },
-  header: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
+  header: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   eyebrow: { color: '#5ba8ff', letterSpacing: 4, fontSize: 11, fontWeight: '800' },
   title: { color: '#fff', fontSize: 23, fontWeight: '800', marginTop: 2 },
   headerButton: { width: 46, height: 46, borderRadius: 15, backgroundColor: '#141b24', alignItems: 'center', justifyContent: 'center' },
-  headerButtonText: { color: '#fff', fontSize: 23 },
-  gpsBar: {
-    marginHorizontal: 16,
-    padding: 14,
-    borderRadius: 20,
-    backgroundColor: '#161d27',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  gpsValue: { color: '#5ce1d3', fontSize: 17, fontWeight: '800' },
-  gpsMeta: { color: '#9ca7b7', marginTop: 3, fontSize: 12 },
-  centerButton: { width: 44, height: 44, borderRadius: 15, backgroundColor: '#218cff', alignItems: 'center', justifyContent: 'center', marginLeft: 10 },
-  centerButtonText: { color: '#fff', fontSize: 23, fontWeight: '800' },
-  searchRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 10 },
-  searchInput: { flex: 1, minHeight: 48, borderRadius: 15, backgroundColor: '#151b24', color: '#fff', paddingHorizontal: 13 },
-  searchButton: { paddingHorizontal: 14, borderRadius: 15, backgroundColor: '#218cff', alignItems: 'center', justifyContent: 'center' },
-  searchButtonText: { color: '#fff', fontWeight: '800' },
-  categoriesList: { flexGrow: 0, maxHeight: 62 },
-  categories: { paddingHorizontal: 16, paddingVertical: 8, gap: 7, alignItems: 'center' },
-  category: { height: 42, paddingHorizontal: 13, borderRadius: 21, backgroundColor: '#171e28', alignItems: 'center', justifyContent: 'center' },
-  categoryActive: { backgroundColor: '#213b5d', borderWidth: 1, borderColor: '#3d8fe8' },
-  categoryText: { color: '#fff', fontWeight: '700', fontSize: 13 },
-  statusBox: { minHeight: 44, marginHorizontal: 16, borderRadius: 14, backgroundColor: '#111720', paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', gap: 10, alignItems: 'center' },
-  statusText: { color: '#cbd5e1', flex: 1, fontSize: 13 },
-  resultsBlock: { marginHorizontal: 16, marginTop: 10, gap: 7 },
-  resultsTitle: { color: '#fff', fontSize: 18, fontWeight: '900', marginBottom: 2 },
-  resultCard: { minHeight: 64, borderRadius: 16, backgroundColor: '#171e28', paddingHorizontal: 13, paddingVertical: 10, flexDirection: 'row', alignItems: 'center' },
-  resultTitle: { color: '#fff', fontSize: 16, fontWeight: '800' },
-  resultMeta: { color: '#9ca7b7', marginTop: 4, fontSize: 12 },
-  startText: { color: '#4aa3ff', fontSize: 22, paddingLeft: 10 },
-  mapWrap: { height: 250, marginHorizontal: 16, marginTop: 12, borderRadius: 22, overflow: 'hidden', backgroundColor: '#111720' },
+  headerButtonText: { color: '#fff', fontSize: 25, fontWeight: '700' },
+  turnBanner: { marginHorizontal: 16, marginBottom: 10, padding: 14, backgroundColor: '#0f3153', borderRadius: 18, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#2d96ff' },
+  turnEyebrow: { color: '#69b5ff', fontSize: 11, fontWeight: '900', letterSpacing: 1.5 },
+  turnInstruction: { color: '#fff', fontSize: 20, fontWeight: '900', marginTop: 4 },
+  turnMeta: { color: '#b9cde1', fontSize: 15, marginTop: 5, fontWeight: '700' },
+  stopButton: { width: 42, height: 42, borderRadius: 14, backgroundColor: '#1c2b3a', alignItems: 'center', justifyContent: 'center', marginLeft: 10 },
+  stopButtonText: { color: '#fff', fontSize: 19, fontWeight: '900' },
+  gpsBar: { marginHorizontal: 16, marginBottom: 12, padding: 15, borderRadius: 22, backgroundColor: '#141b24', flexDirection: 'row', alignItems: 'center' },
+  gpsValue: { color: '#5ce1d2', fontSize: 18, fontWeight: '900' },
+  gpsMeta: { color: '#8e99a9', fontSize: 14, marginTop: 4 },
+  centerButton: { width: 52, height: 52, borderRadius: 16, backgroundColor: '#2d96ff', alignItems: 'center', justifyContent: 'center', marginLeft: 12 },
+  centerButtonText: { color: '#fff', fontSize: 25, fontWeight: '900' },
+  searchRow: { flexDirection: 'row', gap: 8, marginHorizontal: 16, marginBottom: 10 },
+  searchInput: { flex: 1, backgroundColor: '#141b24', color: '#fff', borderRadius: 18, paddingHorizontal: 15, minHeight: 52, fontSize: 16 },
+  searchButton: { backgroundColor: '#2d96ff', borderRadius: 18, minHeight: 52, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
+  searchButtonText: { color: '#fff', fontSize: 16, fontWeight: '900' },
+  categoriesList: { marginBottom: 10 },
+  categories: { paddingHorizontal: 16, gap: 8 },
+  category: { backgroundColor: '#141b24', borderRadius: 17, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: 'transparent' },
+  categoryActive: { borderColor: '#2d96ff', backgroundColor: '#17314c' },
+  categoryText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  statusBox: { marginHorizontal: 16, marginBottom: 14, padding: 13, borderRadius: 16, backgroundColor: '#111820', flexDirection: 'row', alignItems: 'center', gap: 9 },
+  statusText: { color: '#c8d0db', fontSize: 15, flex: 1 },
+  resultsBlock: { marginHorizontal: 16, marginBottom: 12 },
+  resultsTitle: { color: '#fff', fontSize: 22, fontWeight: '900', marginBottom: 10 },
+  resultCard: { minHeight: 78, backgroundColor: '#141b24', borderRadius: 18, padding: 14, marginBottom: 8, flexDirection: 'row', alignItems: 'center' },
+  resultTitle: { color: '#fff', fontSize: 18, fontWeight: '900' },
+  resultMeta: { color: '#97a2b1', fontSize: 14, marginTop: 5, lineHeight: 19 },
+  startText: { color: '#4aa8ff', fontSize: 28, fontWeight: '900', marginLeft: 10 },
+  mapWrap: { height: 420, marginHorizontal: 16, borderRadius: 24, overflow: 'hidden', backgroundColor: '#111820' },
   map: { flex: 1 },
   mapPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  mapPlaceholderTitle: { color: '#fff', fontSize: 18, fontWeight: '800', textAlign: 'center' },
-  mapPlaceholderText: { color: '#9ca7b7', textAlign: 'center', marginTop: 8 },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,.68)', justifyContent: 'flex-end' },
-  modalCard: { backgroundColor: '#10161f', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 22, paddingBottom: 34 },
+  mapPlaceholderTitle: { color: '#fff', fontSize: 20, fontWeight: '900', textAlign: 'center' },
+  mapPlaceholderText: { color: '#9aa5b4', fontSize: 15, textAlign: 'center', marginTop: 8 },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.72)', justifyContent: 'flex-end' },
+  modalCard: { backgroundColor: '#111820', padding: 20, paddingBottom: 32, borderTopLeftRadius: 28, borderTopRightRadius: 28 },
   modalTitle: { color: '#fff', fontSize: 22, fontWeight: '900' },
-  modalText: { color: '#aab4c1', marginTop: 8, marginBottom: 14 },
-  modalInput: { minHeight: 54, borderRadius: 16, backgroundColor: '#171e28', color: '#fff', paddingHorizontal: 14 },
-  modalSave: { minHeight: 54, borderRadius: 16, backgroundColor: '#218cff', alignItems: 'center', justifyContent: 'center', marginTop: 12 },
-  modalSaveText: { color: '#fff', fontWeight: '900', fontSize: 17 },
-  modalClose: { minHeight: 50, alignItems: 'center', justifyContent: 'center', marginTop: 6 },
-  modalCloseText: { color: '#b8c2cf', fontWeight: '700' },
+  modalText: { color: '#9aa5b4', marginTop: 8, marginBottom: 14, lineHeight: 20 },
+  modalInput: { backgroundColor: '#080b10', color: '#fff', borderRadius: 16, minHeight: 52, paddingHorizontal: 14, borderWidth: 1, borderColor: '#27313d' },
+  modalSave: { backgroundColor: '#2d96ff', borderRadius: 16, minHeight: 50, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
+  modalSaveText: { color: '#fff', fontWeight: '900', fontSize: 16 },
+  modalClose: { minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: 7 },
+  modalCloseText: { color: '#b3bdca', fontWeight: '800' },
 });
