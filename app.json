@@ -17,14 +17,14 @@
       "@rnmapbox/maps"
     ],
     "android": {
-      "package": "com.koulierakis.luminadrive",
+      "package": "com.lumina.drive",
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION"
       ]
     },
     "ios": {
-      "bundleIdentifier": "com.koulierakis.luminadrive",
+      "bundleIdentifier": "com.lumina.drive",
       "supportsTablet": false
     }
   }
