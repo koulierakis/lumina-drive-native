@@ -121,3 +121,14 @@ s = s.replace(
 
 p.write_text(s)
 print('PROGRESSIVE AUTOCOMPLETE PATCH APPLIED')
+
+native = Path('app/index.tsx')
+ns = native.read_text()
+old_native = '<Mapbox.PointAnnotation id="selected-destination" coordinate={[selected.point.lng, selected.point.lat]} />'
+new_native = '''<Mapbox.PointAnnotation id="selected-destination" coordinate={[selected.point.lng, selected.point.lat]}>
+                    <View style={{ width: 18, height: 18, borderRadius: 9 }} />
+                  </Mapbox.PointAnnotation>'''
+if old_native in ns:
+    ns = ns.replace(old_native, new_native, 1)
+native.write_text(ns)
+print('NATIVE POINTANNOTATION FIX APPLIED')
