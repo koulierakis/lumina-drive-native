@@ -207,6 +207,7 @@ export default function HomeScreen() {
   const [speedKmh, setSpeedKmh] = useState(0);
   const [gpsError, setGpsError] = useState('');
   const [status, setStatus] = useState('Περιμένω GPS…');
+  const [searchStatus, setSearchStatus] = useState('');
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<Poi[]>([]);
   const [selected, setSelected] = useState<Poi | null>(null);
@@ -265,7 +266,7 @@ export default function HomeScreen() {
     }
     const timer = window.setTimeout(() => searchAddress(text, true), 320);
     return () => window.clearTimeout(timer);
-  }, [query, token, navigationActive, position?.lat, position?.lng]);
+  }, [query, token, navigationActive]);
 
   const nextInstruction = useMemo(() => route?.steps[stepIndex]?.instruction || '', [route, stepIndex]);
 
@@ -366,9 +367,9 @@ export default function HomeScreen() {
       });
       parsed = parsed.slice(0, 10);
       setItems(parsed);
-      setStatus(parsed.length ? `${parsed.length} προτάσεις` : 'Δεν βρέθηκε σχετική διεύθυνση.');
+      setSearchStatus(parsed.length ? `${parsed.length} προτάσεις` : 'Δεν βρέθηκε σχετική διεύθυνση.');
     } catch (e: any) {
-      if (seq === searchSeq.current) setStatus(`Αναζήτηση: ${e?.message || e}`);
+      if (seq === searchSeq.current) setSearchStatus(`Αναζήτηση: ${e?.message || e}`);
     } finally {
       if (seq === searchSeq.current) setLoading(false);
     }
@@ -395,13 +396,16 @@ export default function HomeScreen() {
       let parsed = (data.features || []).map((f: any, i: number) => featureToPoi(f, i, position)).filter(Boolean) as Poi[];
       if (position) parsed = parsed.filter((p) => p.distance <= 25000).sort((a, b) => a.distance - b.distance);
       setItems(parsed);
-      setStatus(parsed.length ? `${parsed.length} κοντινά σημεία` : 'Δεν βρέθηκαν κοντινά σημεία.');
-    } catch (e: any) { setStatus(`Αναζήτηση: ${e?.message || e}`); }
+      setSearchStatus(parsed.length ? `${parsed.length} κοντινά σημεία` : 'Δεν βρέθηκαν κοντινά σημεία.');
+    } catch (e: any) { setSearchStatus(`Αναζήτηση: ${e?.message || e}`); }
     finally { setLoading(false); }
   }
 
   async function calculateRoute(poi: Poi) {
     if (!token || !position) { setStatus('Χρειάζεται Mapbox token και GPS.'); return; }
+    ++searchSeq.current;
+    setItems([]);
+    setSearchStatus('');
     setLoading(true);
     setSelected(poi);
     setRoute(null);
@@ -490,9 +494,10 @@ export default function HomeScreen() {
                 ))}
               </View>
             ) : null}
+            {resultMode === 'address' && query.trim().length >= 3 && searchStatus ? <Text style={styles.searchFeedback}>{searchStatus}</Text> : null}
           </View>
           <FlatList horizontal data={categories} keyExtractor={(x) => x[0]} showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }} renderItem={({ item }) => <Pressable style={styles.category} onPress={() => searchCategory(item[0])}><Text style={styles.categoryText}>{item[1]}</Text></Pressable>} />
-          <View style={styles.status}>{loading ? <ActivityIndicator /> : <View style={styles.dot} />}<Text style={styles.statusText}>{status}</Text></View>
+          <View style={styles.status}>{position ? <View style={styles.dot} /> : <ActivityIndicator />}<Text style={styles.statusText}>{position ? 'GPS ενεργό' : status}</Text></View>
           {resultMode === 'category' ? items.map((item) => <Pressable key={item.id} style={styles.result} onPress={() => calculateRoute(item)}><View style={{ flex: 1 }}><Text style={styles.resultTitle}>{item.name}</Text><Text style={styles.meta}>{position ? `${fmtDistance(item.distance)} · ` : ''}{item.address}</Text></View><Text style={styles.arrow}>›</Text></Pressable>) : null}
         </>}
 
@@ -535,6 +540,7 @@ const styles = StyleSheet.create({
   suggestionLoading: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 13 },
   suggestionTitle: { color: '#eef2f6', fontWeight: '800', fontSize: 15 },
   suggestionMeta: { color: '#7f8998', fontSize: 12, marginTop: 3 },
+  searchFeedback: { color: '#7f8998', fontSize: 12, marginTop: 8, paddingHorizontal: 4 },
   category: { paddingHorizontal: 17, paddingVertical: 12, borderRadius: 19, backgroundColor: '#101720', borderWidth: 1, borderColor: '#263241' },
   categoryText: { color: '#d9dee6', fontWeight: '700' },
   status: { minHeight: 54, borderRadius: 18, backgroundColor: '#0d131b', borderWidth: 1, borderColor: '#263241', flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16 },
