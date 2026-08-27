@@ -10,13 +10,14 @@
 </head>
 <body>
   <main>
-    <header><div><small>LUMINA</small><h1>DRIVE</h1></div><div class="headerTools"><button id="voiceBtn" type="button" aria-label="Βοηθός φωνής">🎙</button><button id="voiceToggle" type="button" aria-label="Φωνητική καθοδήγηση">🔊</button><div id="gps">GPS…</div></div></header>
+    <header><div><small>LUMINA</small><h1>DRIVE</h1></div><div class="headerTools"><button id="voiceBtn" type="button" aria-label="Βοηθός φωνής">🎙</button><button id="voiceToggle" type="button" aria-label="Φωνητική καθοδήγηση">🔊</button><button id="settingsBtn" type="button" aria-label="Ρυθμίσεις">☰</button><div id="gps">GPS…</div></div></header>
+    <section id="settings" class="settings hidden" aria-hidden="true"><div class="settingsHeader"><b>Ρυθμίσεις</b><button id="settingsClose" type="button" aria-label="Κλείσιμο">×</button></div><div class="settingsRow"><span>GPS</span><button id="gpsRetry" type="button">📍 Δοκιμή ξανά</button></div><label class="settingsRow"><span>Voice guidance</span><input id="voiceSetting" type="checkbox" checked></label><label class="settingsRow"><span>Hands-free Julie</span><input id="handsfreeSetting" type="checkbox"></label><label class="settingsRow"><span>Wake word Julie</span><input id="wakeWordSetting" type="checkbox" checked></label><label class="settingsRow"><span>Θέμα</span><select id="themeSetting"><option value="auto">Auto</option><option value="dark">Dark</option><option value="light">Light</option></select></label><div class="settingsActions"><button id="testVoice" type="button">🔊 Test voice</button><button id="testGps" type="button">📍 Test GPS</button><button id="recenterBtn" type="button">◎ Recenter</button></div><button id="clearToken" class="secondaryAction" type="button">Καθαρισμός προαιρετικού token</button></section>
     <section id="voiceStatus" class="hidden"></section>
     <section id="radarAlert" class="hidden"><b id="radarText"></b><span id="radarMeta"></span></section>
     <section id="turn" class="hidden"><div id="turnVisual"><strong id="turnIcon">↑</strong><div><b id="turnText"></b><span id="turnMeta"></span></div></div></section>
     <section class="browseOnly search"><input id="search" placeholder="Αναζήτηση προορισμού…"><button id="searchBtn" aria-label="Αναζήτηση">⌕</button></section>
     <section class="browseOnly nearbyMenu"><button id="nearbyToggle" type="button" aria-expanded="false">📍 Κοντά μου ▾</button><div id="cats" class="nearbyOptions hidden"></div></section>
-    <section id="status">Περιμένω GPS…</section>
+    <section id="status">Περιμένω GPS…</section><button id="gpsAction" class="gpsAction" type="button">📍 Ενεργοποίηση GPS / Δοκιμή ξανά</button>
     <section id="results" class="browseOnly"></section>
     <section class="mapbox"><div id="map"></div></section>
     <section id="routeCard" class="browseOnly hidden"><div id="routeInfo"></div><button id="startBtn">▶ ΕΝΑΡΞΗ ΚΑΘΟΔΗΓΗΣΗΣ</button></section>

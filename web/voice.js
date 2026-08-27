@@ -4,6 +4,8 @@
   const box = document.getElementById('voiceStatus');
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   window.luminaVoiceEnabled = localStorage.getItem('lumina-navigation-voice') !== 'off';
+  let handsfree = localStorage.getItem('lumina-handsfree') === 'on';
+  let wakeWord = localStorage.getItem('lumina-wake-word') !== 'off';
 
   function renderVoiceState() {
     if (!toggle) return;
@@ -32,23 +34,14 @@
     return { intent, result };
   }
   window.luminaTestJulie = (text) => handleCommand(text);
-  if (!button || !SpeechRecognition) return;
   let recognition;
+  let manuallyStopped = false;
+  window.luminaSetHandsfree = (enabled) => { handsfree = enabled; manuallyStopped = !enabled; if (!SpeechRecognition) { if (box) { box.textContent = enabled ? 'Το hands-free δεν υποστηρίζεται από αυτόν τον browser.' : 'Το hands-free απενεργοποιήθηκε.'; box.classList.remove('hidden'); } return; } if (enabled) startRecognition(); else if (recognition) { recognition.stop(); recognition = null; } };
+  if (!button || !SpeechRecognition) return;
+  function startRecognition() { if (recognition || !handsfree && manuallyStopped) return; recognition = new SpeechRecognition(); recognition.lang = 'el-GR'; recognition.interimResults = false; recognition.continuous = handsfree; recognition.onresult = (event) => { const text = event.results[0][0].transcript; if (wakeWord && handsfree && !/\b(julie|τζούλι|τζούλη)\b/i.test(text)) return; if (box) { box.textContent = `Άκουσα: «${text}»`; box.classList.remove('hidden'); } handleCommand(text).catch(() => { if (box) box.textContent = 'Δεν μπόρεσα να ολοκληρώσω την εντολή.'; window.luminaSay?.('Δεν μπόρεσα να ολοκληρώσω την εντολή.', 'assistant'); }); }; recognition.onend = () => { recognition = null; if (handsfree && !manuallyStopped) window.setTimeout(startRecognition, 250); }; recognition.onerror = () => { recognition = null; if (handsfree && !manuallyStopped) window.setTimeout(startRecognition, 1000); }; recognition.start(); }
   button.addEventListener('click', () => {
-    if (recognition) { recognition.stop(); return; }
-    recognition = new SpeechRecognition();
-    recognition.lang = 'el-GR';
-    recognition.interimResults = false;
-    recognition.continuous = false;
-    recognition.onresult = (event) => {
-      const text = event.results[0][0].transcript;
-      if (box) { box.textContent = `Άκουσα: «${text}»`; box.classList.remove('hidden'); }
-      handleCommand(text).catch(() => {
-        if (box) box.textContent = 'Δεν μπόρεσα να ολοκληρώσω την εντολή.';
-        window.luminaSay?.('Δεν μπόρεσα να ολοκληρώσω την εντολή.', 'assistant');
-      });
-    };
-    recognition.onend = () => { recognition = null; };
-    recognition.start();
+    if (recognition) { manuallyStopped = true; recognition.stop(); recognition = null; return; }
+    manuallyStopped = false; startRecognition();
   });
+  if (handsfree) startRecognition();
 })();
