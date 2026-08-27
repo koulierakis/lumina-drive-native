@@ -356,9 +356,17 @@ export default function HomeScreen() {
       });
       parsed.forEach((p) => { p.score = queryScore(q, p.name, p.address); });
 
-      const lastToken = normalizeGreek(q).split(/\s+/).at(-1) || '';
-      const matchingLast = lastToken.length >= 3 ? parsed.filter((p) => normalizeGreek(`${p.name} ${p.address}`).includes(lastToken)) : [];
-      if (matchingLast.length) parsed = matchingLast;
+      const normalizedQueryTokens = normalizeGreek(q)
+        .split(/\s+/)
+        .filter((token) => token.length >= 3 && !/^\d+$/.test(token));
+
+      if (normalizedQueryTokens.length) {
+        const strictMatches = parsed.filter((p) => {
+          const hay = normalizeGreek(`${p.name} ${p.address}`);
+          return normalizedQueryTokens.every((token) => hay.includes(token));
+        });
+        parsed = strictMatches;
+      }
 
       parsed.sort((a, b) => {
         const scoreDiff = (b.score || 0) - (a.score || 0);
