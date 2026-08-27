@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -16,13 +16,16 @@ import {
 } from 'react-native';
 
 type Point = { lat: number; lng: number };
-type Poi = { id: string; name: string; address: string; point: Point; distance: number };
+type Poi = { id: string; name: string; address: string; point: Point; distance: number; score?: number };
 type RouteStep = { instruction: string; point: Point; distance: number; duration: number };
 type RouteInfo = { geometry: any; distance: number; duration: number; steps: RouteStep[] };
 
 const TOKEN_KEY = 'lumina-mapbox-public-token';
-const SEARCH_API = 'https://api.mapbox.com/search/searchbox/v1/forward';
+const GEOCODE_API = 'https://api.mapbox.com/search/geocode/v6/forward';
+const SEARCHBOX_API = 'https://api.mapbox.com/search/searchbox/v1/forward';
 const DIRECTIONS_API = 'https://api.mapbox.com/directions/v5/mapbox/driving';
+const GREECE_BBOX = '19.2477,34.7006,29.7297,41.7489';
+
 const categories = [
   ['restaurant', '🍽️ Εστιατόρια'],
   ['cafe', '☕ Καφέ'],
@@ -33,19 +36,6 @@ const categories = [
   ['supermarket', '🛒 Supermarket'],
   ['gym', '🏋️ Γυμναστήρια'],
 ] as const;
-
-const BASE_STYLE: any = {
-  version: 8,
-  sources: {
-    osm: {
-      type: 'raster',
-      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-      tileSize: 256,
-      attribution: '© OpenStreetMap contributors',
-    },
-  },
-  layers: [{ id: 'osm-base', type: 'raster', source: 'osm' }],
-};
 
 function toRad(v: number) { return (v * Math.PI) / 180; }
 function distanceMeters(a: Point, b: Point) {
@@ -70,6 +60,42 @@ function speakGreek(text: string) {
   u.rate = 0.94;
   window.speechSynthesis.speak(u);
 }
+function normalizeGreek(v: string) {
+  return v
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('el-GR')
+    .replace(/ς/g, 'σ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+}
+function queryScore(query: string, name: string, address: string) {
+  const q = normalizeGreek(query);
+  const hay = normalizeGreek(`${name} ${address}`);
+  if (!q) return 0;
+  const tokens = q.split(/\s+/).filter((x) => x.length >= 2);
+  let score = hay.includes(q) ? 100 : 0;
+  for (const token of tokens) if (hay.includes(token)) score += token.length >= 4 ? 16 : 8;
+  const last = tokens.at(-1);
+  if (last && last.length >= 3 && hay.includes(last)) score += 40;
+  return score;
+}
+function featureToPoi(feature: any, i: number, position: Point | null): Poi | null {
+  const c = feature?.geometry?.coordinates;
+  const p = feature?.properties || {};
+  if (!Array.isArray(c) || c.length < 2) return null;
+  const point = { lng: Number(c[0]), lat: Number(c[1]) };
+  if (!Number.isFinite(point.lng) || !Number.isFinite(point.lat)) return null;
+  const name = String(p.name || p.full_address || feature?.place_name || 'Αποτέλεσμα');
+  const address = String(p.full_address || p.place_formatted || p.address || feature?.place_name || name);
+  return {
+    id: String(feature.id || `${name}-${i}-${point.lng}-${point.lat}`),
+    name,
+    address,
+    point,
+    distance: position ? distanceMeters(position, point) : 0,
+  };
+}
 
 function WebMap({ position, route, selected, navigationActive, centerNonce }: {
   position: Point | null;
@@ -79,31 +105,35 @@ function WebMap({ position, route, selected, navigationActive, centerNonce }: {
   centerNonce: number;
 }) {
   const hostRef = useRef<any>(null);
-  const mapRef = useRef<mapboxgl.Map | null>(null);
-  const userMarker = useRef<mapboxgl.Marker | null>(null);
-  const destMarker = useRef<mapboxgl.Marker | null>(null);
-  const [ready, setReady] = useState(false);
+  const mapRef = useRef<L.Map | null>(null);
+  const userMarker = useRef<L.CircleMarker | null>(null);
+  const destMarker = useRef<L.CircleMarker | null>(null);
+  const routeLayer = useRef<L.Polyline | null>(null);
 
   useEffect(() => {
     const node = hostRef.current as HTMLElement | null;
     if (!node || mapRef.current) return;
-    const map = new mapboxgl.Map({
-      container: node,
-      style: BASE_STYLE,
-      center: position ? [position.lng, position.lat] : [23.7275, 37.9838],
-      zoom: position ? 14 : 6,
-      attributionControl: true,
-    });
-    map.addControl(new mapboxgl.NavigationControl({ showCompass: true }), 'top-right');
-    map.on('load', () => setReady(true));
+
+    const map = L.map(node, { zoomControl: true, attributionControl: true }).setView(
+      position ? [position.lat, position.lng] : [37.9838, 23.7275],
+      position ? 16 : 6,
+    );
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      subdomains: ['a', 'b', 'c'],
+      maxZoom: 19,
+      attribution: '© OpenStreetMap contributors',
+    }).addTo(map);
+
     mapRef.current = map;
-    const resizeTimer = window.setTimeout(() => map.resize(), 250);
+    const timer = window.setTimeout(() => map.invalidateSize(), 300);
     return () => {
-      window.clearTimeout(resizeTimer);
-      userMarker.current?.remove();
-      destMarker.current?.remove();
+      window.clearTimeout(timer);
       map.remove();
       mapRef.current = null;
+      userMarker.current = null;
+      destMarker.current = null;
+      routeLayer.current = null;
     };
   }, []);
 
@@ -111,51 +141,58 @@ function WebMap({ position, route, selected, navigationActive, centerNonce }: {
     const map = mapRef.current;
     if (!map || !position) return;
     if (!userMarker.current) {
-      userMarker.current = new mapboxgl.Marker({ color: '#39d6b4' }).setLngLat([position.lng, position.lat]).addTo(map);
-    } else userMarker.current.setLngLat([position.lng, position.lat]);
-    if (navigationActive) map.easeTo({ center: [position.lng, position.lat], zoom: 16.2, pitch: 45, duration: 600 });
+      userMarker.current = L.circleMarker([position.lat, position.lng], {
+        radius: 9,
+        color: '#ffffff',
+        weight: 3,
+        fillColor: '#39d6b4',
+        fillOpacity: 1,
+      }).addTo(map);
+      map.setView([position.lat, position.lng], 16, { animate: false });
+    } else {
+      userMarker.current.setLatLng([position.lat, position.lng]);
+    }
+    if (navigationActive) map.setView([position.lat, position.lng], 17, { animate: true });
   }, [position, navigationActive]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (map && position) map.easeTo({ center: [position.lng, position.lat], zoom: 15, duration: 450 });
+    if (map && position) map.setView([position.lat, position.lng], 16, { animate: true });
   }, [centerNonce]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !ready) return;
-    const sourceId = 'lumina-route';
-    const layerId = 'lumina-route-line';
-    if (!route) {
-      if (map.getLayer(layerId)) map.removeLayer(layerId);
-      if (map.getSource(sourceId)) map.removeSource(sourceId);
-      return;
+    if (!map) return;
+    if (routeLayer.current) {
+      routeLayer.current.remove();
+      routeLayer.current = null;
     }
-    const source = map.getSource(sourceId) as mapboxgl.GeoJSONSource | undefined;
-    if (source) source.setData(route.geometry);
-    else {
-      map.addSource(sourceId, { type: 'geojson', data: route.geometry });
-      map.addLayer({
-        id: layerId,
-        type: 'line',
-        source: sourceId,
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': '#3b82f6', 'line-width': navigationActive ? 9 : 7 },
-      });
-    }
+    if (!route) return;
     const coords = route.geometry.geometry.coordinates as [number, number][];
-    if (coords.length && !navigationActive) {
-      const bounds = coords.reduce((b, c) => b.extend(c), new mapboxgl.LngLatBounds(coords[0], coords[0]));
-      map.fitBounds(bounds, { padding: 55, duration: 650 });
-    }
-  }, [route, ready, navigationActive]);
+    const latLngs = coords.map(([lng, lat]) => [lat, lng] as [number, number]);
+    routeLayer.current = L.polyline(latLngs, {
+      color: '#3b82f6',
+      weight: navigationActive ? 9 : 7,
+      opacity: 0.95,
+    }).addTo(map);
+    if (latLngs.length && !navigationActive) map.fitBounds(routeLayer.current.getBounds(), { padding: [40, 40] });
+  }, [route, navigationActive]);
 
   useEffect(() => {
-    destMarker.current?.remove();
-    destMarker.current = null;
     const map = mapRef.current;
-    if (!map || !selected) return;
-    destMarker.current = new mapboxgl.Marker({ color: '#e0b968' }).setLngLat([selected.point.lng, selected.point.lat]).addTo(map);
+    if (!map) return;
+    if (destMarker.current) {
+      destMarker.current.remove();
+      destMarker.current = null;
+    }
+    if (!selected) return;
+    destMarker.current = L.circleMarker([selected.point.lat, selected.point.lng], {
+      radius: 9,
+      color: '#ffffff',
+      weight: 3,
+      fillColor: '#e0b968',
+      fillOpacity: 1,
+    }).addTo(map);
   }, [selected]);
 
   return <View ref={hostRef} style={styles.map} />;
@@ -179,6 +216,7 @@ export default function HomeScreen() {
   const [stepIndex, setStepIndex] = useState(0);
   const [centerNonce, setCenterNonce] = useState(0);
   const spoken = useRef<Set<string>>(new Set());
+  const searchSeq = useRef(0);
 
   useEffect(() => { AsyncStorage.getItem(TOKEN_KEY).then((v) => v?.startsWith('pk.') && setToken(v)); }, []);
 
@@ -217,6 +255,17 @@ export default function HomeScreen() {
     if (d < 35 && stepIndex < route.steps.length - 1) setStepIndex((i) => i + 1);
   }, [navigationActive, position, route, stepIndex]);
 
+  useEffect(() => {
+    if (!token || navigationActive) return;
+    const text = query.trim();
+    if (text.length < 3) {
+      setItems([]);
+      return;
+    }
+    const timer = window.setTimeout(() => searchAddress(text, true), 320);
+    return () => window.clearTimeout(timer);
+  }, [query, token, navigationActive, position?.lat, position?.lng]);
+
   const nextInstruction = useMemo(() => route?.steps[stepIndex]?.instruction || '', [route, stepIndex]);
 
   async function saveToken() {
@@ -229,47 +278,118 @@ export default function HomeScreen() {
     setStatus('Mapbox token αποθηκεύτηκε.');
   }
 
-  async function searchMapbox(text: string, nearbyOnly = false) {
+  async function requestGeocode(url: URL) {
+    const r = await fetch(url.toString());
+    const data = await r.json();
+    if (!r.ok) throw new Error(data?.message || `HTTP ${r.status}`);
+    return Array.isArray(data?.features) ? data.features : [];
+  }
+
+  async function searchAddress(text: string, autocomplete = false) {
     if (!token) { setSettingsOpen(true); setStatus('Χρειάζεται Mapbox token'); return; }
     const q = text.trim();
     if (!q) return;
-    setLoading(true); setItems([]); setRoute(null); setSelected(null); setNavigationActive(false);
+    const seq = ++searchSeq.current;
+    setLoading(true);
+    setRoute(null);
+    setSelected(null);
+    setNavigationActive(false);
     try {
-      const url = new URL(SEARCH_API);
+      const url = new URL(GEOCODE_API);
       url.searchParams.set('q', q);
       url.searchParams.set('access_token', token);
       url.searchParams.set('country', 'GR');
       url.searchParams.set('language', 'el');
+      url.searchParams.set('autocomplete', autocomplete ? 'true' : 'false');
       url.searchParams.set('limit', '10');
-      url.searchParams.set('types', 'poi');
+      url.searchParams.set('types', 'address,street,place,locality');
+      url.searchParams.set('bbox', GREECE_BBOX);
+      if (position) url.searchParams.set('proximity', `${position.lng},${position.lat}`);
+
+      const requests: Promise<any[]>[] = [requestGeocode(url)];
+      const parts = q.split(/\s+/).filter(Boolean);
+      if (parts.length >= 3) {
+        const placeHint = parts.at(-1) || '';
+        const addressLine = parts.slice(0, -1).join(' ');
+        if (placeHint.length >= 2 && addressLine.length >= 4) {
+          const structured = new URL(GEOCODE_API);
+          structured.searchParams.set('address_line1', addressLine);
+          structured.searchParams.set('place', placeHint);
+          structured.searchParams.set('country', 'GR');
+          structured.searchParams.set('language', 'el');
+          structured.searchParams.set('autocomplete', autocomplete ? 'true' : 'false');
+          structured.searchParams.set('limit', '10');
+          structured.searchParams.set('bbox', GREECE_BBOX);
+          structured.searchParams.set('access_token', token);
+          if (position) structured.searchParams.set('proximity', `${position.lng},${position.lat}`);
+          requests.push(requestGeocode(structured).catch(() => []));
+        }
+      }
+
+      const batches = await Promise.all(requests);
+      if (seq !== searchSeq.current) return;
+      const seen = new Set<string>();
+      let parsed = batches.flat().map((f, i) => featureToPoi(f, i, position)).filter(Boolean) as Poi[];
+      parsed = parsed.filter((p) => {
+        const key = `${p.point.lng.toFixed(5)}:${p.point.lat.toFixed(5)}:${normalizeGreek(p.name)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      parsed.forEach((p) => { p.score = queryScore(q, p.name, p.address); });
+
+      const lastToken = normalizeGreek(q).split(/\s+/).at(-1) || '';
+      const matchingLast = lastToken.length >= 3 ? parsed.filter((p) => normalizeGreek(`${p.name} ${p.address}`).includes(lastToken)) : [];
+      if (matchingLast.length) parsed = matchingLast;
+
+      parsed.sort((a, b) => {
+        const scoreDiff = (b.score || 0) - (a.score || 0);
+        if (scoreDiff) return scoreDiff;
+        return a.distance - b.distance;
+      });
+      parsed = parsed.slice(0, 10);
+      setItems(parsed);
+      setStatus(parsed.length ? `${parsed.length} προτάσεις` : 'Δεν βρέθηκε σχετική διεύθυνση.');
+    } catch (e: any) {
+      if (seq === searchSeq.current) setStatus(`Αναζήτηση: ${e?.message || e}`);
+    } finally {
+      if (seq === searchSeq.current) setLoading(false);
+    }
+  }
+
+  async function searchCategory(text: string) {
+    if (!token) { setSettingsOpen(true); setStatus('Χρειάζεται Mapbox token'); return; }
+    setLoading(true);
+    setRoute(null);
+    setSelected(null);
+    setNavigationActive(false);
+    try {
+      const url = new URL(SEARCHBOX_API);
+      url.searchParams.set('q', text);
+      url.searchParams.set('access_token', token);
+      url.searchParams.set('country', 'GR');
+      url.searchParams.set('language', 'el');
+      url.searchParams.set('limit', '10');
       if (position) url.searchParams.set('proximity', `${position.lng},${position.lat}`);
       const r = await fetch(url.toString());
       const data = await r.json();
       if (!r.ok) throw new Error(data?.message || `HTTP ${r.status}`);
-      let parsed: Poi[] = (data.features || []).map((f: any, i: number) => {
-        const c = f?.geometry?.coordinates;
-        const p = f?.properties || {};
-        if (!Array.isArray(c) || c.length < 2 || !p.name) return null;
-        const point = { lng: Number(c[0]), lat: Number(c[1]) };
-        return {
-          id: String(f.id || `${p.name}-${i}`),
-          name: String(p.name),
-          address: String(p.full_address || p.place_formatted || p.address || '—'),
-          point,
-          distance: position ? distanceMeters(position, point) : 0,
-        } as Poi;
-      }).filter(Boolean);
-      if (nearbyOnly && position) parsed = parsed.filter((p) => p.distance <= 20000);
-      if (position) parsed.sort((a, b) => a.distance - b.distance);
+      let parsed = (data.features || []).map((f: any, i: number) => featureToPoi(f, i, position)).filter(Boolean) as Poi[];
+      if (position) parsed = parsed.filter((p) => p.distance <= 25000).sort((a, b) => a.distance - b.distance);
       setItems(parsed);
-      setStatus(parsed.length ? `${parsed.length} αποτελέσματα` : 'Δεν βρέθηκαν σημεία.');
+      setStatus(parsed.length ? `${parsed.length} κοντινά σημεία` : 'Δεν βρέθηκαν κοντινά σημεία.');
     } catch (e: any) { setStatus(`Αναζήτηση: ${e?.message || e}`); }
     finally { setLoading(false); }
   }
 
   async function calculateRoute(poi: Poi) {
     if (!token || !position) { setStatus('Χρειάζεται Mapbox token και GPS.'); return; }
-    setLoading(true); setSelected(poi); setRoute(null); setNavigationActive(false); setStepIndex(0); spoken.current.clear();
+    setLoading(true);
+    setSelected(poi);
+    setRoute(null);
+    setNavigationActive(false);
+    setStepIndex(0);
+    spoken.current.clear();
     try {
       const url = new URL(`${DIRECTIONS_API}/${position.lng},${position.lat};${poi.point.lng},${poi.point.lat}`);
       url.searchParams.set('access_token', token);
@@ -301,13 +421,19 @@ export default function HomeScreen() {
 
   function beginGuidance() {
     if (!route || !selected) return;
-    setNavigationActive(true); setStepIndex(0); spoken.current.clear();
+    setNavigationActive(true);
+    setStepIndex(0);
+    spoken.current.clear();
     setStatus(`Καθοδήγηση ενεργή προς ${selected.name}`);
     speakGreek(`Η καθοδήγηση ξεκίνησε προς ${selected.name}`);
   }
 
   function stopGuidance() {
-    setNavigationActive(false); setRoute(null); setSelected(null); setStepIndex(0); spoken.current.clear();
+    setNavigationActive(false);
+    setRoute(null);
+    setSelected(null);
+    setStepIndex(0);
+    spoken.current.clear();
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
     setStatus('GPS ενεργό');
   }
@@ -329,8 +455,14 @@ export default function HomeScreen() {
         {route ? <View style={styles.banner}><Text style={styles.bannerKicker}>{navigationActive ? 'ΚΑΘΟΔΗΓΗΣΗ ΕΝΕΡΓΗ' : 'ΔΙΑΔΡΟΜΗ ΕΤΟΙΜΗ'}</Text><Text style={styles.bannerTitle}>{selected?.name}</Text><Text style={styles.bannerText}>{nextInstruction}</Text><Text style={styles.meta}>{fmtDistance(route.distance)} · {fmtDuration(route.duration)}</Text>{navigationActive ? <Pressable style={styles.stop} onPress={stopGuidance}><Text style={styles.stopText}>✕ ΤΕΡΜΑΤΙΣΜΟΣ</Text></Pressable> : <Pressable style={styles.go} onPress={beginGuidance}><Text style={styles.goText}>▶ ΕΝΑΡΞΗ ΚΑΘΟΔΗΓΗΣΗΣ</Text></Pressable>}</View> : null}
 
         {!navigationActive && <>
-          <View style={styles.searchCard}><Text style={styles.kicker}>DESTINATION · ΟΛΗ Η ΕΛΛΑΔΑ</Text><View style={styles.searchRow}><TextInput value={query} onChangeText={setQuery} placeholder="Όνομα ή διεύθυνση…" placeholderTextColor="#6f7785" style={styles.input} onSubmitEditing={() => searchMapbox(query)} /><Pressable style={styles.searchButton} onPress={() => searchMapbox(query)}><Text style={styles.searchButtonText}>⌕</Text></Pressable></View></View>
-          <FlatList horizontal data={categories} keyExtractor={(x) => x[0]} showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }} renderItem={({ item }) => <Pressable style={styles.category} onPress={() => searchMapbox(item[0], true)}><Text style={styles.categoryText}>{item[1]}</Text></Pressable>} />
+          <View style={styles.searchCard}>
+            <Text style={styles.kicker}>DESTINATION · ΟΛΗ Η ΕΛΛΑΔΑ</Text>
+            <View style={styles.searchRow}>
+              <TextInput value={query} onChangeText={setQuery} placeholder="Όνομα ή διεύθυνση…" placeholderTextColor="#6f7785" style={styles.input} onSubmitEditing={() => searchAddress(query, false)} />
+              <Pressable style={styles.searchButton} onPress={() => searchAddress(query, false)}><Text style={styles.searchButtonText}>⌕</Text></Pressable>
+            </View>
+          </View>
+          <FlatList horizontal data={categories} keyExtractor={(x) => x[0]} showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }} renderItem={({ item }) => <Pressable style={styles.category} onPress={() => searchCategory(item[0])}><Text style={styles.categoryText}>{item[1]}</Text></Pressable>} />
           <View style={styles.status}>{loading ? <ActivityIndicator /> : <View style={styles.dot} />}<Text style={styles.statusText}>{status}</Text></View>
           {items.map((item) => <Pressable key={item.id} style={styles.result} onPress={() => calculateRoute(item)}><View style={{ flex: 1 }}><Text style={styles.resultTitle}>{item.name}</Text><Text style={styles.meta}>{position ? `${fmtDistance(item.distance)} · ` : ''}{item.address}</Text></View><Text style={styles.arrow}>›</Text></Pressable>)}
         </>}
