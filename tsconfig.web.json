@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "app/index.web.tsx",
+    "app/_layout.web.tsx",
+    "expo-env.d.ts"
+  ],
+  "exclude": [
+    "app/index.tsx",
+    "app/_layout.tsx"
+  ]
+}
