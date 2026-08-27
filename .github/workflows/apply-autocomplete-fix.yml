@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - .github/workflows/apply-autocomplete-fix.yml
+      - .github/scripts/apply_autocomplete_fix.py
 
 permissions:
   contents: write
@@ -33,7 +34,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/index.web.tsx
+          git add app/index.web.tsx app/index.tsx
           if git diff --cached --quiet; then
             exit 0
           fi
