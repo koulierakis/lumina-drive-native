@@ -566,7 +566,9 @@ export default function HomeScreen() {
                   </Mapbox.ShapeSource>
                 ) : null}
                 {selected ? (
-                  <Mapbox.PointAnnotation id="selected-destination" coordinate={[selected.point.lng, selected.point.lat]} />
+                  <Mapbox.PointAnnotation id="selected-destination" coordinate={[selected.point.lng, selected.point.lat]}>
+                    <View style={{ width: 18, height: 18, borderRadius: 9 }} />
+                  </Mapbox.PointAnnotation>
                 ) : null}
               </Mapbox.MapView>
             ) : (

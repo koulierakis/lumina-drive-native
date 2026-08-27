@@ -212,6 +212,7 @@ export default function HomeScreen() {
   const [selected, setSelected] = useState<Poi | null>(null);
   const [route, setRoute] = useState<RouteInfo | null>(null);
   const [loading, setLoading] = useState(false);
+  const [resultMode, setResultMode] = useState<'address' | 'category'>('address');
   const [navigationActive, setNavigationActive] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [centerNonce, setCenterNonce] = useState(0);
@@ -290,6 +291,7 @@ export default function HomeScreen() {
     const q = text.trim();
     if (!q) return;
     const seq = ++searchSeq.current;
+    setResultMode('address');
     setLoading(true);
     setRoute(null);
     setSelected(null);
@@ -308,10 +310,26 @@ export default function HomeScreen() {
 
       const requests: Promise<any[]>[] = [requestGeocode(url)];
       const parts = q.split(/\s+/).filter(Boolean);
+      const placeHint = parts.at(-1) || '';
+      const normalizedHint = normalizeGreek(placeHint);
+      const hintLooksLikePlace = parts.length >= 2 && normalizedHint.length >= 3 && /^\p{L}+$/u.test(placeHint);
+
+      if (hintLooksLikePlace) {
+        const nationwide = new URL(GEOCODE_API);
+        nationwide.searchParams.set('q', q);
+        nationwide.searchParams.set('access_token', token);
+        nationwide.searchParams.set('country', 'GR');
+        nationwide.searchParams.set('language', 'el');
+        nationwide.searchParams.set('autocomplete', autocomplete ? 'true' : 'false');
+        nationwide.searchParams.set('limit', '10');
+        nationwide.searchParams.set('types', 'address,street,place,locality');
+        nationwide.searchParams.set('bbox', GREECE_BBOX);
+        requests.push(requestGeocode(nationwide).catch(() => []));
+      }
+
       if (parts.length >= 3) {
-        const placeHint = parts.at(-1) || '';
         const addressLine = parts.slice(0, -1).join(' ');
-        if (placeHint.length >= 2 && addressLine.length >= 4) {
+        if (hintLooksLikePlace && addressLine.length >= 4) {
           const structured = new URL(GEOCODE_API);
           structured.searchParams.set('address_line1', addressLine);
           structured.searchParams.set('place', placeHint);
@@ -321,7 +339,6 @@ export default function HomeScreen() {
           structured.searchParams.set('limit', '10');
           structured.searchParams.set('bbox', GREECE_BBOX);
           structured.searchParams.set('access_token', token);
-          if (position) structured.searchParams.set('proximity', `${position.lng},${position.lat}`);
           requests.push(requestGeocode(structured).catch(() => []));
         }
       }
@@ -359,6 +376,7 @@ export default function HomeScreen() {
 
   async function searchCategory(text: string) {
     if (!token) { setSettingsOpen(true); setStatus('Χρειάζεται Mapbox token'); return; }
+    setResultMode('category');
     setLoading(true);
     setRoute(null);
     setSelected(null);
@@ -461,10 +479,21 @@ export default function HomeScreen() {
               <TextInput value={query} onChangeText={setQuery} placeholder="Όνομα ή διεύθυνση…" placeholderTextColor="#6f7785" style={styles.input} onSubmitEditing={() => searchAddress(query, false)} />
               <Pressable style={styles.searchButton} onPress={() => searchAddress(query, false)}><Text style={styles.searchButtonText}>⌕</Text></Pressable>
             </View>
+            {resultMode === 'address' && query.trim().length >= 3 && (loading || items.length > 0) ? (
+              <View style={styles.suggestions}>
+                {loading && items.length === 0 ? <View style={styles.suggestionLoading}><ActivityIndicator /><Text style={styles.statusText}>Αναζήτηση…</Text></View> : null}
+                {items.slice(0, 8).map((item) => (
+                  <Pressable key={`suggest-${item.id}`} style={styles.suggestion} onPress={() => calculateRoute(item)}>
+                    <View style={{ flex: 1 }}><Text style={styles.suggestionTitle}>{item.name}</Text><Text style={styles.suggestionMeta}>{item.address}</Text></View>
+                    <Text style={styles.arrow}>›</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
           </View>
           <FlatList horizontal data={categories} keyExtractor={(x) => x[0]} showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }} renderItem={({ item }) => <Pressable style={styles.category} onPress={() => searchCategory(item[0])}><Text style={styles.categoryText}>{item[1]}</Text></Pressable>} />
           <View style={styles.status}>{loading ? <ActivityIndicator /> : <View style={styles.dot} />}<Text style={styles.statusText}>{status}</Text></View>
-          {items.map((item) => <Pressable key={item.id} style={styles.result} onPress={() => calculateRoute(item)}><View style={{ flex: 1 }}><Text style={styles.resultTitle}>{item.name}</Text><Text style={styles.meta}>{position ? `${fmtDistance(item.distance)} · ` : ''}{item.address}</Text></View><Text style={styles.arrow}>›</Text></Pressable>)}
+          {resultMode === 'category' ? items.map((item) => <Pressable key={item.id} style={styles.result} onPress={() => calculateRoute(item)}><View style={{ flex: 1 }}><Text style={styles.resultTitle}>{item.name}</Text><Text style={styles.meta}>{position ? `${fmtDistance(item.distance)} · ` : ''}{item.address}</Text></View><Text style={styles.arrow}>›</Text></Pressable>) : null}
         </>}
 
         <View style={styles.mapFrame}>
@@ -501,6 +530,11 @@ const styles = StyleSheet.create({
   input: { flex: 1, minHeight: 56, borderRadius: 17, backgroundColor: '#090d13', borderWidth: 1, borderColor: '#263241', color: '#f3f5f7', paddingHorizontal: 15, fontSize: 17 },
   searchButton: { width: 60, borderRadius: 17, backgroundColor: '#e0b968', alignItems: 'center', justifyContent: 'center' },
   searchButtonText: { color: '#101319', fontSize: 29 },
+  suggestions: { marginTop: 10, overflow: 'hidden', borderRadius: 16, borderWidth: 1, borderColor: '#263241', backgroundColor: '#090d13' },
+  suggestion: { minHeight: 58, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: '#1d2733' },
+  suggestionLoading: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 13 },
+  suggestionTitle: { color: '#eef2f6', fontWeight: '800', fontSize: 15 },
+  suggestionMeta: { color: '#7f8998', fontSize: 12, marginTop: 3 },
   category: { paddingHorizontal: 17, paddingVertical: 12, borderRadius: 19, backgroundColor: '#101720', borderWidth: 1, borderColor: '#263241' },
   categoryText: { color: '#d9dee6', fontWeight: '700' },
   status: { minHeight: 54, borderRadius: 18, backgroundColor: '#0d131b', borderWidth: 1, borderColor: '#263241', flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16 },
