@@ -1,0 +1,41 @@
+name: Fix strict autocomplete filtering
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/scripts/apply_strict_autocomplete_filter.py'
+      - '.github/workflows/fix-strict-autocomplete.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Apply strict autocomplete filter
+        run: python3 .github/scripts/apply_strict_autocomplete_filter.py
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+      - name: Validate TypeScript
+        run: npm run typecheck
+      - name: Validate web export
+        run: npx expo export --platform web
+      - name: Commit validated fix
+        run: |
+          if git diff --quiet; then
+            echo 'No changes to commit'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/index.web.tsx package-lock.json
+          git commit -m 'fix: enforce progressive autocomplete filtering'
+          git push
