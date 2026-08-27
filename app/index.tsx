@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   FlatList,
   Modal,
   Pressable,
@@ -45,6 +46,8 @@ type RouteInfo = {
 };
 
 const TOKEN_KEY = 'lumina-mapbox-public-token';
+const NAVIGATION_SESSION_KEY = 'lumina-navigation-session';
+const VOICE_PREFERENCE_KEY = 'lumina-navigation-voice';
 const SEARCH_API = 'https://api.mapbox.com/search/searchbox/v1/forward';
 const DIRECTIONS_API = 'https://api.mapbox.com/directions/v5/mapbox/driving';
 const VOICE_THRESHOLDS = [300, 100, 50] as const;
@@ -120,6 +123,19 @@ function speakGreek(message: string) {
   });
 }
 
+function actionFirstInstruction(instruction: string) {
+  const value = instruction.toLocaleLowerCase('el-GR');
+  if (value.includes('κυκλ') || value.includes('roundabout')) {
+    const exit = instruction.match(/(\d+)\s*(?:η|η έξοδο|exit)/i)?.[1];
+    return exit ? `ΚΥΚΛΙΚΟΣ ΚΟΜΒΟΣ · ${exit}η ΕΞΟΔΟΣ` : 'ΚΥΚΛΙΚΟΣ ΚΟΜΒΟΣ';
+  }
+  if (value.includes('αριστερ')) return 'ΣΤΡΟΦΗ ΑΡΙΣΤΕΡΑ';
+  if (value.includes('δεξι')) return 'ΣΤΡΟΦΗ ΔΕΞΙΑ';
+  if (value.includes('αναστροφ')) return 'ΚΑΝΕΤΕ ΑΝΑΣΤΡΟΦΗ';
+  if (value.includes('κρατ') || value.includes('συγχων')) return instruction.toUpperCase();
+  return 'ΣΥΝΕΧΙΣΤΕ ΕΥΘΕΙΑ';
+}
+
 export default function HomeScreen() {
   const [token, setToken] = useState('');
   const [tokenDraft, setTokenDraft] = useState('');
@@ -135,12 +151,15 @@ export default function HomeScreen() {
   const [selected, setSelected] = useState<Poi | null>(null);
   const [route, setRoute] = useState<RouteInfo | null>(null);
   const [navigationActive, setNavigationActive] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [stepIndex, setStepIndex] = useState(0);
+  const [heading, setHeading] = useState<number | null>(null);
   const [query, setQuery] = useState('');
   const [lastCategory, setLastCategory] = useState('');
   const camera = useRef<Mapbox.Camera>(null);
   const spokenMilestones = useRef<Set<string>>(new Set());
   const arrivalSpoken = useRef(false);
+  const navigationSnapshot = useRef({ active: false, route: null as RouteInfo | null, selected: null as Poi | null, stepIndex: 0, voiceEnabled: true });
 
   useEffect(() => {
     AsyncStorage.getItem(TOKEN_KEY).then((saved) => {
@@ -150,6 +169,42 @@ export default function HomeScreen() {
       }
     });
   }, []);
+
+  useEffect(() => {
+    AsyncStorage.getItem(VOICE_PREFERENCE_KEY).then((saved) => setVoiceEnabled(saved !== 'off'));
+    AsyncStorage.getItem(NAVIGATION_SESSION_KEY).then((saved) => {
+      if (!saved) return;
+      try {
+        const session = JSON.parse(saved);
+        if (session?.active && session.route && session.selected) {
+          setRoute(session.route);
+          setSelected(session.selected);
+          setStepIndex(Math.max(0, Number(session.stepIndex) || 0));
+          setNavigationActive(true);
+        }
+      } catch {}
+    });
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'background' || state === 'inactive') {
+        const snapshot = navigationSnapshot.current;
+        if (snapshot.active && snapshot.route && snapshot.selected) {
+          AsyncStorage.setItem(NAVIGATION_SESSION_KEY, JSON.stringify({ ...snapshot, savedAt: Date.now() }));
+        }
+      }
+    });
+    return () => subscription.remove();
+  }, []);
+
+  async function saveNavigationSession() {
+    if (!navigationActive || !route || !selected) return;
+    await AsyncStorage.setItem(NAVIGATION_SESSION_KEY, JSON.stringify({ active: true, route, selected, stepIndex, voiceEnabled, savedAt: Date.now() }));
+  }
+
+  useEffect(() => {
+    navigationSnapshot.current = { active: navigationActive, route, selected, stepIndex, voiceEnabled };
+    AsyncStorage.setItem(VOICE_PREFERENCE_KEY, voiceEnabled ? 'on' : 'off');
+    if (navigationActive && route && selected) saveNavigationSession();
+  }, [voiceEnabled, navigationActive, route, selected, stepIndex]);
 
   useEffect(() => {
     let sub: Location.LocationSubscription | undefined;
@@ -163,7 +218,7 @@ export default function HomeScreen() {
       const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       setPosition({ lat: current.coords.latitude, lng: current.coords.longitude });
       setAccuracy(current.coords.accuracy ?? null);
-      setSpeedKmh(Math.max(0, Math.round((current.coords.speed ?? 0) * 3.6)));
+      setSpeedKmh(Number.isFinite(current.coords.speed) && (current.coords.speed ?? 0) >= 0 ? Math.round((current.coords.speed ?? 0) * 3.6) : 0);
       setStatus('GPS ενεργό');
       sub = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.High, distanceInterval: 5, timeInterval: 3000 },
@@ -171,6 +226,7 @@ export default function HomeScreen() {
           setPosition({ lat: loc.coords.latitude, lng: loc.coords.longitude });
           setAccuracy(loc.coords.accuracy ?? null);
           setSpeedKmh(Math.max(0, Math.round((loc.coords.speed ?? 0) * 3.6)));
+          setHeading(Number.isFinite(loc.coords.heading) ? loc.coords.heading : null);
           setGpsError('');
         },
       );
@@ -202,7 +258,7 @@ export default function HomeScreen() {
           for (const passed of VOICE_THRESHOLDS) {
             if (passed >= threshold) spokenMilestones.current.add(`${stepIndex}:${passed}`);
           }
-          speakGreek(`Σε ${threshold} μέτρα, ${currentStep.instruction}`);
+          if (voiceEnabled) speakGreek(`Σε ${threshold} μέτρα, ${actionFirstInstruction(currentStep.instruction).toLocaleLowerCase('el-GR')}.`);
         }
       }
 
@@ -218,7 +274,7 @@ export default function HomeScreen() {
         speakGreek(`Έφτασες στον προορισμό σου, ${selected.name}`);
       }
     }
-  }, [navigationActive, position, route, selected, stepIndex]);
+  }, [navigationActive, position, route, selected, stepIndex, voiceEnabled]);
 
   const center = useMemo<[number, number] | undefined>(
     () => (position ? [position.lng, position.lat] : undefined),
@@ -389,7 +445,7 @@ export default function HomeScreen() {
     setNavigationActive(true);
     setStepIndex(0);
     setStatus(`Καθοδήγηση ενεργή προς ${selected.name}`);
-    speakGreek(`Η καθοδήγηση ξεκίνησε προς ${selected.name}`);
+    if (voiceEnabled) speakGreek(`Η καθοδήγηση ξεκίνησε προς ${selected.name}`);
     camera.current?.setCamera({
       centerCoordinate: [position.lng, position.lat],
       zoomLevel: 16.2,
@@ -406,6 +462,7 @@ export default function HomeScreen() {
     spokenMilestones.current.clear();
     arrivalSpoken.current = false;
     Speech.stop();
+    AsyncStorage.removeItem(NAVIGATION_SESSION_KEY);
     setStatus('GPS ενεργό');
     if (center) {
       camera.current?.setCamera({ centerCoordinate: center, zoomLevel: 15, pitch: 0, animationDuration: 500 });
@@ -437,7 +494,7 @@ export default function HomeScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.turnEyebrow}>{navigationActive ? 'ΚΑΘΟΔΗΓΗΣΗ ΕΝΕΡΓΗ' : 'ΔΙΑΔΡΟΜΗ ΕΤΟΙΜΗ'}</Text>
               <Text style={styles.turnDestination} numberOfLines={1}>{selected?.name}</Text>
-              <Text style={styles.turnInstruction}>{activeInstruction}</Text>
+              <Text style={styles.turnInstruction}>{navigationActive && distanceToNextManeuver != null ? `${fmtDistance(distanceToNextManeuver)} — ${actionFirstInstruction(activeInstruction)}` : activeInstruction}</Text>
               <Text style={styles.turnMeta}>
                 {navigationActive && distanceToNextManeuver != null
                   ? `${fmtDistance(distanceToNextManeuver)} ως την επόμενη κίνηση  •  `
@@ -449,6 +506,7 @@ export default function HomeScreen() {
                   <Text style={styles.beginButtonText}>▶  ΕΝΑΡΞΗ ΚΑΘΟΔΗΓΗΣΗΣ</Text>
                 </Pressable>
               ) : null}
+              {navigationActive ? <Pressable style={styles.voiceButton} onPress={() => setVoiceEnabled((enabled) => !enabled)}><Text style={styles.voiceButtonText}>{voiceEnabled ? '🔊' : '🔇'} ΦΩΝΗ</Text></Pressable> : null}
             </View>
             <Pressable style={styles.stopButton} onPress={stopNavigation}>
               <Text style={styles.stopButtonText}>✕</Text>
@@ -684,6 +742,8 @@ const styles = StyleSheet.create({
   beginButtonText: { color: '#070A0F', fontSize: 13, fontWeight: '900', letterSpacing: 0.8 },
   stopButton: { width: 38, height: 38, borderRadius: 13, backgroundColor: '#121A22', borderWidth: 1, borderColor: '#26323E', alignItems: 'center', justifyContent: 'center', marginLeft: 8 },
   stopButtonText: { color: '#E6EAF0', fontSize: 17, fontWeight: '800' },
+  voiceButton: { marginTop: 10, alignSelf: 'flex-start', minHeight: 44, paddingHorizontal: 14, borderRadius: 14, backgroundColor: '#111A24', borderWidth: 1, borderColor: '#263443', justifyContent: 'center' },
+  voiceButtonText: { color: '#D7DEE7', fontSize: 13, fontWeight: '800' },
 
   mapFrame: { marginHorizontal: 16, borderRadius: 25, overflow: 'hidden', borderWidth: 1, borderColor: '#1D2834', backgroundColor: '#090E14' },
   mapFrameNavigation: { borderColor: '#2C6C59' },

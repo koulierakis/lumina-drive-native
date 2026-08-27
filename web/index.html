@@ -1,1 +1,30 @@
-<!doctype html><html lang="el"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/><meta name="theme-color" content="#07111f"/><title>LUMINA DRIVE</title><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/><link rel="stylesheet" href="./style.css"></head><body><main><header><div><small>LUMINA</small><h1>DRIVE</h1></div><div class="headerTools"><button id="voiceBtn" type="button">🎙 ΦΩΝΗ</button><div id="gps">GPS…</div></div></header><section id="voiceStatus" class="hidden">Φωνητικός χειρισμός ανενεργός</section><section id="radarAlert" class="hidden"><b id="radarText"></b><span id="radarMeta"></span></section><section id="turn" class="hidden"><b id="turnText"></b><span id="turnMeta"></span></section><section class="search"><input id="search" placeholder="Αναζήτηση με όνομα ή διεύθυνση…"><button id="searchBtn">Αναζήτηση</button></section><section id="cats" class="cats"></section><section class="cats"><button id="reportRadar">📡 Αναφορά ραντάρ</button><button id="reportPolice">👮 Αναφορά ελέγχου</button></section><section id="status">Περιμένω GPS…</section><section id="results"></section><section class="mapbox"><div id="map"></div></section><section id="routeCard" class="hidden"><div id="routeInfo"></div><button id="startBtn">▶ ΕΝΑΡΞΗ ΚΑΘΟΔΗΓΗΣΗΣ</button><button id="stopBtn">ΤΕΛΟΣ</button></section></main><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script src="./app.js"></script><script src="./voice.js"></script><script src="./maneuver-ui.js"></script></body></html>
+<!doctype html>
+<html lang="el">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#07111f">
+  <title>LUMINA DRIVE</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main>
+    <header><div><small>LUMINA</small><h1>DRIVE</h1></div><div class="headerTools"><button id="voiceBtn" type="button" aria-label="Βοηθός φωνής">🎙</button><button id="voiceToggle" type="button" aria-label="Φωνητική καθοδήγηση">🔊</button><div id="gps">GPS…</div></div></header>
+    <section id="voiceStatus" class="hidden"></section>
+    <section id="radarAlert" class="hidden"><b id="radarText"></b><span id="radarMeta"></span></section>
+    <section id="turn" class="hidden"><div id="turnVisual"><strong id="turnIcon">↑</strong><div><b id="turnText"></b><span id="turnMeta"></span></div></div></section>
+    <section class="browseOnly search"><input id="search" placeholder="Αναζήτηση προορισμού…"><button id="searchBtn" aria-label="Αναζήτηση">⌕</button></section>
+    <section id="cats" class="browseOnly cats"></section>
+    <section class="browseOnly cats reportControls"><button id="reportRadar">📡 Ραντάρ</button><button id="reportPolice">👮 Έλεγχος</button></section>
+    <section id="status">Περιμένω GPS…</section>
+    <section id="results" class="browseOnly"></section>
+    <section class="mapbox"><div id="map"></div></section>
+    <section id="routeCard" class="browseOnly hidden"><div id="routeInfo"></div><button id="startBtn">▶ ΕΝΑΡΞΗ ΚΑΘΟΔΗΓΗΣΗΣ</button></section>
+    <section id="navPanel" class="hidden"><div><b id="navTime">--</b><span id="navDistance">--</span></div><b id="navEta">ETA --:--</b><button id="stopBtn">■ ΤΕΛΟΣ</button></section>
+  </main>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="./app.js"></script>
+  <script src="./voice.js"></script>
+</body>
+</html>
