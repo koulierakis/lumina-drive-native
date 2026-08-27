@@ -217,6 +217,7 @@ export default function HomeScreen() {
   const [navigationActive, setNavigationActive] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [centerNonce, setCenterNonce] = useState(0);
+  const [nearbyOpen, setNearbyOpen] = useState(true);
   const spoken = useRef<Set<string>>(new Set());
   const searchSeq = useRef(0);
 
@@ -269,6 +270,10 @@ export default function HomeScreen() {
   }, [query, token, navigationActive]);
 
   const nextInstruction = useMemo(() => route?.steps[stepIndex]?.instruction || '', [route, stepIndex]);
+  const nextDistance = useMemo(() => {
+    const step = route?.steps[stepIndex];
+    return step && position ? distanceMeters(position, step.point) : null;
+  }, [route, position, stepIndex]);
 
   async function saveToken() {
     const v = tokenDraft.trim();
@@ -482,7 +487,7 @@ export default function HomeScreen() {
           <Pressable style={styles.center} onPress={() => setCenterNonce((n) => n + 1)}><Text style={styles.centerText}>◎</Text></Pressable>
         </View>
 
-        {route ? <View style={styles.banner}><Text style={styles.bannerKicker}>{navigationActive ? 'ΚΑΘΟΔΗΓΗΣΗ ΕΝΕΡΓΗ' : 'ΔΙΑΔΡΟΜΗ ΕΤΟΙΜΗ'}</Text><Text style={styles.bannerTitle}>{selected?.name}</Text><Text style={styles.bannerText}>{nextInstruction}</Text><Text style={styles.meta}>{fmtDistance(route.distance)} · {fmtDuration(route.duration)}</Text>{navigationActive ? <Pressable style={styles.stop} onPress={stopGuidance}><Text style={styles.stopText}>✕ ΤΕΡΜΑΤΙΣΜΟΣ</Text></Pressable> : <Pressable style={styles.go} onPress={beginGuidance}><Text style={styles.goText}>▶ ΕΝΑΡΞΗ ΚΑΘΟΔΗΓΗΣΗΣ</Text></Pressable>}</View> : null}
+        {route ? <View style={styles.banner}><Text style={styles.bannerKicker}>{navigationActive ? 'ΚΑΘΟΔΗΓΗΣΗ ΕΝΕΡΓΗ' : 'ΔΙΑΔΡΟΜΗ ΕΤΟΙΜΗ'}</Text><Text style={styles.bannerTitle}>{selected?.name}</Text><Text style={styles.bannerText}>{navigationActive && nextDistance != null ? `${fmtDistance(nextDistance)} · ` : ''}{nextInstruction}</Text><Text style={styles.meta}>{fmtDistance(route.distance)} · {fmtDuration(route.duration)}</Text>{navigationActive ? <Pressable style={styles.stop} onPress={stopGuidance}><Text style={styles.stopText}>✕ ΤΕΡΜΑΤΙΣΜΟΣ</Text></Pressable> : <Pressable style={styles.go} onPress={beginGuidance}><Text style={styles.goText}>▶ ΕΝΑΡΞΗ ΚΑΘΟΔΗΓΗΣΗΣ</Text></Pressable>}</View> : null}
 
         {!navigationActive && <>
           <View style={styles.searchCard}>
@@ -506,7 +511,7 @@ export default function HomeScreen() {
           </View>
           <FlatList horizontal data={categories} keyExtractor={(x) => x[0]} showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }} renderItem={({ item }) => <Pressable style={styles.category} onPress={() => searchCategory(item[0])}><Text style={styles.categoryText}>{item[1]}</Text></Pressable>} />
           <View style={styles.status}>{position ? <View style={styles.dot} /> : <ActivityIndicator />}<Text style={styles.statusText}>{position ? 'GPS ενεργό' : status}</Text></View>
-          {resultMode === 'category' ? items.map((item) => <Pressable key={item.id} style={styles.result} onPress={() => calculateRoute(item)}><View style={{ flex: 1 }}><Text style={styles.resultTitle}>{item.name}</Text><Text style={styles.meta}>{position ? `${fmtDistance(item.distance)} · ` : ''}{item.address}</Text></View><Text style={styles.arrow}>›</Text></Pressable>) : null}
+          {resultMode === 'category' && items.length > 0 ? <View style={styles.nearby}><Pressable style={styles.nearbyToggle} onPress={() => setNearbyOpen((open) => !open)} accessibilityRole="button" accessibilityState={{ expanded: nearbyOpen }}><Text style={styles.resultTitle}>Κοντά μου · {items.length}</Text><Text style={styles.arrow}>{nearbyOpen ? '⌃' : '⌄'}</Text></Pressable>{nearbyOpen ? items.map((item) => <Pressable key={item.id} style={styles.result} onPress={() => calculateRoute(item)}><View style={{ flex: 1 }}><Text style={styles.resultTitle}>{item.name}</Text><Text style={styles.meta}>{position ? `${fmtDistance(item.distance)} · ` : ''}{item.address}</Text></View><Text style={styles.arrow}>›</Text></Pressable>) : null}</View> : null}
         </>}
 
         <View style={styles.mapFrame}>
@@ -555,6 +560,8 @@ const styles = StyleSheet.create({
   dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#39d6b4' },
   statusText: { color: '#aab4c2', flex: 1 },
   result: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0d131b', borderWidth: 1, borderColor: '#263241', borderRadius: 18, padding: 14 },
+  nearby: { gap: 8 },
+  nearbyToggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 },
   resultTitle: { color: '#eef2f6', fontWeight: '800', fontSize: 16 },
   arrow: { color: '#73c7ff', fontSize: 30 },
   banner: { backgroundColor: '#101720', borderWidth: 1, borderColor: '#34506a', borderRadius: 23, padding: 17 },
