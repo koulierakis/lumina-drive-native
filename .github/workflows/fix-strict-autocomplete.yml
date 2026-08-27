@@ -19,7 +19,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
       - name: Apply strict autocomplete filter
         run: python3 .github/scripts/apply_strict_autocomplete_filter.py
       - name: Install dependencies
