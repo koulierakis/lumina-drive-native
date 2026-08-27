@@ -15,8 +15,7 @@
     <section id="radarAlert" class="hidden"><b id="radarText"></b><span id="radarMeta"></span></section>
     <section id="turn" class="hidden"><div id="turnVisual"><strong id="turnIcon">↑</strong><div><b id="turnText"></b><span id="turnMeta"></span></div></div></section>
     <section class="browseOnly search"><input id="search" placeholder="Αναζήτηση προορισμού…"><button id="searchBtn" aria-label="Αναζήτηση">⌕</button></section>
-    <section id="cats" class="browseOnly cats"></section>
-    <section class="browseOnly cats reportControls"><button id="reportRadar">📡 Ραντάρ</button><button id="reportPolice">👮 Έλεγχος</button></section>
+    <section class="browseOnly nearbyMenu"><button id="nearbyToggle" type="button" aria-expanded="false">📍 Κοντά μου ▾</button><div id="cats" class="nearbyOptions hidden"></div></section>
     <section id="status">Περιμένω GPS…</section>
     <section id="results" class="browseOnly"></section>
     <section class="mapbox"><div id="map"></div></section>
@@ -25,6 +24,7 @@
   </main>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="./app.js"></script>
+  <script src="./intent-router.js"></script>
   <script src="./voice.js"></script>
 </body>
 </html>

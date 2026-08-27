@@ -18,6 +18,20 @@
     renderVoiceState();
   });
   renderVoiceState();
+  let lastCommand = '';
+  async function handleCommand(text) {
+    if (text === lastCommand) return;
+    lastCommand = text;
+    const intent = window.luminaParseIntent?.(text) || { type: 'unknown' };
+    const result = await window.luminaJulieAction?.(intent);
+    if (result) {
+      if (box) { box.textContent = result; box.classList.remove('hidden'); }
+      window.luminaSay?.(result, 'assistant');
+    }
+    window.setTimeout(() => { lastCommand = ''; }, 1500);
+    return { intent, result };
+  }
+  window.luminaTestJulie = (text) => handleCommand(text);
   if (!button || !SpeechRecognition) return;
   let recognition;
   button.addEventListener('click', () => {
@@ -29,9 +43,10 @@
     recognition.onresult = (event) => {
       const text = event.results[0][0].transcript;
       if (box) { box.textContent = `Άκουσα: «${text}»`; box.classList.remove('hidden'); }
-      const normalized = text.toLocaleLowerCase('el-GR');
-      if (/σταμάτα|τέλος/.test(normalized)) document.getElementById('stopBtn')?.click();
-      else if (/ξεκίνα|έναρξη/.test(normalized)) document.getElementById('startBtn')?.click();
+      handleCommand(text).catch(() => {
+        if (box) box.textContent = 'Δεν μπόρεσα να ολοκληρώσω την εντολή.';
+        window.luminaSay?.('Δεν μπόρεσα να ολοκληρώσω την εντολή.', 'assistant');
+      });
     };
     recognition.onend = () => { recognition = null; };
     recognition.start();
