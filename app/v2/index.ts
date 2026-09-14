@@ -1,3 +1,4 @@
+// Driver Assistant V2 public surface. Native map rendering is MapLibre-only; Mapbox remains service fallback only.
 export * from './types';
 export * from './providers';
 export * from './provider-policy';
