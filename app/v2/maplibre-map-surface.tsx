@@ -61,31 +61,37 @@ export function MapLibreMapSurface({
 
   useEffect(() => {
     if (navigationActive) {
-      camera.current?.setCamera({
-        centerCoordinate: [center.lng, center.lat],
-        zoomLevel: zoom,
+      camera.current?.setStop({
+        center: [center.lng, center.lat],
+        zoom,
         bearing,
         pitch,
-        animationDuration: 650,
+        duration: 650,
+        easing: 'ease',
       });
       return;
     }
+
     const bounds = routeBounds(route);
     if (bounds) {
       camera.current?.fitBounds(
-        [bounds.east, bounds.north],
-        [bounds.west, bounds.south],
-        [70, 45, 70, 45],
-        700,
+        [bounds.west, bounds.south, bounds.east, bounds.north],
+        {
+          padding: { top: 70, right: 45, bottom: 70, left: 45 },
+          duration: 700,
+          easing: 'ease',
+        },
       );
       return;
     }
-    camera.current?.setCamera({
-      centerCoordinate: [center.lng, center.lat],
-      zoomLevel: zoom,
+
+    camera.current?.setStop({
+      center: [center.lng, center.lat],
+      zoom,
       bearing,
       pitch,
-      animationDuration: 500,
+      duration: 500,
+      easing: 'ease',
     });
   }, [bearing, center.lat, center.lng, navigationActive, pitch, route, zoom]);
 
