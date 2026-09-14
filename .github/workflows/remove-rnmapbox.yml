@@ -1,0 +1,37 @@
+name: Remove legacy RNMapbox
+
+on:
+  push:
+    branches:
+      - work/driver-assistant-v2
+    paths:
+      - '.github/workflows/remove-rnmapbox.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/driver-assistant-v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Remove RNMapbox and refresh lockfile
+        run: npm uninstall @rnmapbox/maps --no-audit --no-fund
+      - name: Commit dependency migration
+        run: |
+          if git diff --quiet -- package.json package-lock.json; then
+            echo "No dependency changes required"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore(native): remove RNMapbox dependency"
+          git push origin HEAD:work/driver-assistant-v2
