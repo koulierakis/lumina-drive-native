@@ -21,7 +21,8 @@
           "locationWhenInUsePermission": "Το LUMINA Drive χρειάζεται την τοποθεσία σας για χάρτη, κοντινά σημεία και πλοήγηση."
         }
       ],
-      "@maplibre/maplibre-react-native"
+      "@maplibre/maplibre-react-native",
+      "./plugins/with-valhalla"
     ],
     "android": {
       "package": "com.lumina.drive",
