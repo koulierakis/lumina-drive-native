@@ -1,0 +1,52 @@
+name: Probe Valhalla Mobile Android
+
+on:
+  push:
+    branches:
+      - work/driver-assistant-v2
+    paths:
+      - '.github/workflows/valhalla-mobile-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-valhalla-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Expo Android prebuild
+        env:
+          CI: '1'
+        run: npx expo prebuild --platform android --no-install --clean
+      - name: Inject Valhalla Mobile dependency and compile probe
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          gradle = Path('android/app/build.gradle')
+          text = gradle.read_text()
+          needle = 'dependencies {'
+          if needle not in text:
+              raise SystemExit('dependencies block not found')
+          text = text.replace(needle, needle + "\n    implementation 'io.github.rallista:valhalla-mobile:0.5.1'", 1)
+          gradle.write_text(text)
+
+          probe = Path('android/app/src/main/java/com/lumina/drive/ValhallaCompileProbe.kt')
+          probe.parent.mkdir(parents=True, exist_ok=True)
+          probe.write_text('''package com.lumina.drive\n\nimport com.valhalla.valhalla.Valhalla\n\nclass ValhallaCompileProbe(private val engine: Valhalla?)\n''')
+          PY
+          cd android
+          ./gradlew :app:compileDebugKotlin :app:mergeDebugNativeLibs --no-daemon --stacktrace
