@@ -13,6 +13,10 @@ on:
       - '.github/workflows/android-native-v2.yml'
   workflow_dispatch:
 
+concurrency:
+  group: android-native-driver-v2
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
