@@ -34,7 +34,7 @@ export function MapLibreMapSurface({
 
   return (
     <View style={styles.container}>
-      <Map mapStyle={mapStyle} style={styles.map} attributionEnabled>
+      <Map mapStyle={mapStyle} style={styles.map}>
         <Camera
           initialViewState={{ center: [center.lng, center.lat], zoom, bearing, pitch }}
           trackUserLocation={trackUserLocation ? 'course' : undefined}
