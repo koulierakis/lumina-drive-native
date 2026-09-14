@@ -1,0 +1,36 @@
+name: Validate Driver Assistant V2
+
+on:
+  push:
+    branches:
+      - work/driver-assistant-v2
+    paths:
+      - 'app/**'
+      - 'docs/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - 'tsconfig.web.json'
+      - '.github/workflows/validate-driver-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript native
+        run: npm run typecheck
+      - name: TypeScript web
+        run: npx tsc --noEmit -p tsconfig.web.json
