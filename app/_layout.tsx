@@ -1,34 +1,32 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Mapbox from '@rnmapbox/maps';
 import { Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
 
 const MAPBOX_TOKEN_KEY = 'lumina-mapbox-public-token';
 
 export default function RootLayout() {
-  const [mapboxReady, setMapboxReady] = useState(false);
+  const [runtimeReady, setRuntimeReady] = useState(false);
 
   useEffect(() => {
     let active = true;
 
-    async function initializeMapbox() {
+    async function initializeRuntime() {
       const publicToken = process.env.EXPO_PUBLIC_MAPBOX_TOKEN?.trim();
 
       if (publicToken?.startsWith('pk.')) {
-        Mapbox.setAccessToken(publicToken);
         await AsyncStorage.setItem(MAPBOX_TOKEN_KEY, publicToken).catch(() => undefined);
       }
 
-      if (active) setMapboxReady(true);
+      if (active) setRuntimeReady(true);
     }
 
-    initializeMapbox();
+    initializeRuntime();
     return () => {
       active = false;
     };
   }, []);
 
-  if (!mapboxReady) return null;
+  if (!runtimeReady) return null;
 
   return (
     <Stack
