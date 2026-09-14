@@ -12,3 +12,4 @@ export * from './navigation-engine';
 export * from './ai-intents';
 export * from './ai-command-engine';
 export * from './driver-coach';
+export * from './open-map-runtime';
