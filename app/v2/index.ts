@@ -7,6 +7,7 @@ export * from './offline-regions-store';
 export * from './offline-region-controller';
 export * from './offline-routing-packages';
 export * from './routing-package-selector';
+export * from './valhalla-offline-routing-provider';
 export * from './legacy-mapbox-providers';
 export * from './expo-voice-provider';
 export * from './lane-guidance';
