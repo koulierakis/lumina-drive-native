@@ -14,3 +14,4 @@ export * from './ai-command-engine';
 export * from './driver-coach';
 export * from './open-map-runtime';
 export * from './maplibre-offline-region-provider';
+export * from './maplibre-map-surface';
