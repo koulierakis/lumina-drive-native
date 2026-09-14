@@ -34,3 +34,5 @@ jobs:
         run: npm run typecheck
       - name: TypeScript web
         run: npx tsc --noEmit -p tsconfig.web.json
+      - name: Expo web export
+        run: npx expo export --platform web --output-dir dist-v2
