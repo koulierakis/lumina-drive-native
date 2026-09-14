@@ -7,6 +7,7 @@
     "userInterfaceStyle": "dark",
     "scheme": "luminadrive",
     "owner": "jsaglobals-team",
+    "newArchEnabled": true,
     "extra": {
       "eas": {
         "projectId": "c254b1b9-07b1-4ce4-8300-e36625435747"
@@ -25,7 +26,8 @@
         {
           "RNMapboxMapsVersion": "11.20.1"
         }
-      ]
+      ],
+      "@maplibre/maplibre-react-native"
     ],
     "android": {
       "package": "com.lumina.drive",
