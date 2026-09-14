@@ -45,15 +45,23 @@ export type SearchResult = {
 };
 
 export type RouteProfile = 'driving' | 'walking' | 'cycling';
+export type RoutePreference = 'fastest' | 'shortest';
 
 export type RouteRequest = {
   origin: GeoPoint;
   destination: GeoPoint;
   waypoints?: GeoPoint[];
   profile: RouteProfile;
+  preference?: RoutePreference;
   avoidTolls?: boolean;
   avoidFerries?: boolean;
   avoidHighways?: boolean;
+};
+
+export type Lane = {
+  indications: string[];
+  valid: boolean;
+  active?: boolean;
 };
 
 export type RouteStep = {
@@ -62,6 +70,7 @@ export type RouteStep = {
   durationSeconds: number;
   maneuver?: string;
   point?: GeoPoint;
+  lanes?: Lane[];
 };
 
 export type RouteResult = {
@@ -71,6 +80,30 @@ export type RouteResult = {
   durationSeconds: number;
   steps: RouteStep[];
   source: string;
+};
+
+export type NavigationStop = {
+  id: string;
+  name: string;
+  point: GeoPoint;
+  address?: string;
+};
+
+export type Itinerary = {
+  origin: GeoPoint;
+  stops: NavigationStop[];
+  profile: RouteProfile;
+  preference?: RoutePreference;
+  avoidTolls?: boolean;
+  avoidFerries?: boolean;
+  avoidHighways?: boolean;
+};
+
+export type EtaEstimate = {
+  baseDurationSeconds: number;
+  trafficAdjustmentSeconds: number;
+  totalDurationSeconds: number;
+  arrivalTimeMs: number;
 };
 
 export type ProviderAvailability = {
