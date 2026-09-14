@@ -28,14 +28,14 @@ export function updateNavigation(snapshot: NavigationSnapshot, position: GeoPoin
   const route = snapshot.route;
   if (!snapshot.active || !route) return { ...snapshot, distanceToManeuver: null, guidanceThreshold: null, shouldReroute: false };
 
-  const destination = route.points[route.points.length - 1];
+  const destination = route.geometry[route.geometry.length - 1];
   const arrived = destination ? distanceMeters(position, destination) < 30 : false;
   const current = stepPoint(route.steps[snapshot.stepIndex]);
   const distanceToManeuver = current ? distanceMeters(position, current) : null;
   let stepIndex = snapshot.stepIndex;
   if (distanceToManeuver != null && distanceToManeuver < 35 && stepIndex < route.steps.length - 1) stepIndex += 1;
 
-  const routeCoordinates = route.points.map((point) => [point.lng, point.lat]);
+  const routeCoordinates = route.geometry.map((point: GeoPoint) => [point.lng, point.lat]);
   const offRouteDistance = distanceToRouteMeters(position, routeCoordinates);
   const offRouteConfirmations = offRouteDistance > OFF_ROUTE_THRESHOLD_METERS ? snapshot.offRouteConfirmations + 1 : 0;
   const cooldownElapsed = now - snapshot.lastRerouteAt >= REROUTE_COOLDOWN_MS;
