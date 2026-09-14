@@ -33,13 +33,14 @@ jobs:
           CI: '1'
         run: npx expo prebuild --platform android --no-install --clean
       - name: Inject Valhalla Mobile dependency and compile probe
-        env:
-          ORG_GRADLE_PROJECT_android.minSdkVersion: '26'
         run: |
           python - <<'PY'
           from pathlib import Path
           gradle = Path('android/app/build.gradle')
           text = gradle.read_text()
+          text = text.replace('minSdkVersion rootProject.ext.minSdkVersion', 'minSdkVersion 26')
+          if 'minSdkVersion 26' not in text:
+              raise SystemExit('minSdkVersion patch failed')
           needle = 'dependencies {'
           if needle not in text:
               raise SystemExit('dependencies block not found')
