@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@maplibre/maplibre-react-native": "11.3.10",
     "@react-native-async-storage/async-storage": "2.1.2",
     "@rnmapbox/maps": "10.3.5",
     "expo": "~54.0.0",
